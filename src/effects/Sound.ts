@@ -106,6 +106,10 @@ class SoundEngine {
     this.tone(toneFreq, heavy ? 0.24 : 0.1, { type: "sine", endFreq: heavy ? 35 : 60, gain: heavy ? 0.42 : 0.2 });
   }
 
+  whoosh(big: boolean): void {
+    this.noiseHit(big ? 0.14 : 0.08, { gain: big ? 0.13 : 0.08, filterFreq: big ? 900 : 1500 });
+  }
+
   wallJump(): void {
     this.tone(500, 0.1, { type: "square", endFreq: 900, gain: 0.15 });
     this.noiseHit(0.06, { gain: 0.14, filterFreq: 2000 });

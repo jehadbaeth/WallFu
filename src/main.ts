@@ -324,6 +324,7 @@ async function main() {
       const heavy = isHeavyKind(ev.kind);
       const originX = fighter.x + fighter.facing * (18 + data.range * 0.6);
       const originY = fighter.y - data.height * 0.6;
+      sound.whoosh(heavy);
       particles.burst(originX, originY, color, heavy ? 14 : 8, {
         speed: heavy ? 80 : 50,
         spread: 0.6,
@@ -331,6 +332,20 @@ async function main() {
         size: heavy ? 6 : 4,
         glow: true,
       });
+      if (isKickKind(ev.kind)) {
+        // Crescent of speed lines tracing the kick arc.
+        const tipX = fighter.x + fighter.facing * (18 + data.range);
+        const tipY = fighter.y - data.height * (ev.kind === "highKick" ? 0.85 : 0.5);
+        particles.streakBurst(tipX, tipY, WHITE, heavy ? 9 : 6, {
+          angle: fighter.facing > 0 ? -0.6 : Math.PI + 0.6,
+          spread: 1.8,
+          speed: 460,
+          size: 4,
+        });
+        if (ev.kind === "highKick") {
+          shockRings.spawn(tipX, tipY, color, 55, 0.2, 4);
+        }
+      }
       if (ev.kind === "diveKick") {
         particles.streakBurst(fighter.x, fighter.y, color, 6, { angle: Math.PI / 2 - fighter.facing * 0.4, speed: 500, spread: 0.4, size: 4 });
       }

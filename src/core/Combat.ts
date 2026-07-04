@@ -67,18 +67,19 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     hitstop: 0.05,
     bottomOffset: 0,
   },
-  // Roundhouse: the big ground hit.
+  // Head-height roundhouse: the big ground hit, whiffs low.
   highKick: {
     startup: 0.11,
     active: 0.1,
     recovery: 0.2,
-    damage: 12,
-    knockback: 660,
-    upKnockback: 320,
-    hitstun: 0.34,
-    range: 74,
-    height: 96,
-    hitstop: 0.07,
+    damage: 13,
+    knockback: 680,
+    upKnockback: 340,
+    hitstun: 0.36,
+    range: 80,
+    height: 120,
+    hitstop: 0.075,
+    bottomOffset: -48,
   },
   airPunch: {
     startup: 0.04,

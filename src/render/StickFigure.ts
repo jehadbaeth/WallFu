@@ -159,6 +159,15 @@ export class StickFigureView {
     const running = grounded && speed > 10 && !fighter.isAttacking && !fighter.blocking;
     const wallSliding =
       !grounded && fighter.touchingWallSide !== 0 && !fighter.isAttacking && !fighter.isStunned && !fighter.blocking;
+    // Extension drives the strike: negative = chambered wind-up, 1 = full snap, partial = retracting.
+    let attackExt = 0;
+    if (fighter.attackKind && fighter.attackPhase === "startup") {
+      attackExt = -0.45 * (1 - fighter.attackTimer / ATTACKS[fighter.attackKind].startup);
+    } else if (fighter.attackPhase === "active") {
+      attackExt = 1;
+    } else if (fighter.attackPhase === "recovery") {
+      attackExt = 0.55;
+    }
     const pose = buildPose(
       this.runPhase,
       running,
@@ -168,11 +177,7 @@ export class StickFigureView {
       fighter.isAttacking ? fighter.attackKind : null,
       fighter.blocking,
       fighter.isStunned,
-      fighter.attackPhase === "startup" && fighter.attackKind
-        ? 1 - fighter.attackTimer / ATTACKS[fighter.attackKind].startup
-        : fighter.attackPhase === "active"
-          ? 1
-          : 0,
+      attackExt,
       this.knockLean,
       wallSliding,
     );
@@ -202,13 +207,20 @@ const ATTACK_POSES: Record<AttackKind, AttackPoseConfig> = {
   lowPunch: { lean: 0.12, leanGain: 0.1, armBase: 0.4, armReach: 1.2, backArm: 0.5, frontLeg: 0.15, frontLegBend: 0.1, backLeg: -0.15, backLegBend: 0.1, crouch: 0.05 },
   highPunch: { lean: 0.18, leanGain: 0.15, armBase: 0.4, armReach: 1.7, backArm: 0.3, frontLeg: 0.2, frontLegBend: 0.1, backLeg: -0.2, backLegBend: 0.15, crouch: 0.05 },
   lowKick: { lean: 0.25, leanGain: 0.1, armBase: -0.2, armReach: -0.3, backArm: -0.4, frontLeg: 0.9, frontLegBend: 0.1, backLeg: -0.2, backLegBend: 0.45, crouch: 0.3 },
-  highKick: { lean: -0.12, leanGain: -0.06, armBase: -0.3, armReach: -0.3, backArm: -0.5, frontLeg: 1.9, frontLegBend: 0.05, backLeg: -0.15, backLegBend: 0.2, crouch: 0.1 },
+  // Bruce Lee head kick: leg above horizontal, torso whipped back for balance.
+  highKick: { lean: -0.28, leanGain: -0.08, armBase: -0.4, armReach: -0.25, backArm: -0.65, frontLeg: 2.35, frontLegBend: 0.05, backLeg: -0.15, backLegBend: 0.2, crouch: 0.05 },
   airPunch: { lean: 0.12, leanGain: 0.1, armBase: 0.4, armReach: 1.5, backArm: 0.4, frontLeg: 0.3, frontLegBend: 0.5, backLeg: -0.2, backLegBend: 0.6, crouch: 0 },
-  airKick: { lean: 0.1, leanGain: 0.1, armBase: -0.2, armReach: -0.3, backArm: -0.4, frontLeg: 1.7, frontLegBend: 0.05, backLeg: -0.3, backLegBend: 0.6, crouch: 0 },
+  // MK jump kick: leg thrust diagonally down-forward along the falling arc, other leg tucked.
+  airKick: { lean: 0.15, leanGain: 0.1, armBase: -0.3, armReach: -0.3, backArm: -0.5, frontLeg: 1.25, frontLegBend: 0.05, backLeg: -0.2, backLegBend: 0.75, crouch: 0 },
   diveKick: { lean: 0.55, leanGain: 0.1, armBase: -0.7, armReach: -0.3, backArm: -0.9, frontLeg: 0.85, frontLegBend: 0.05, backLeg: 0.6, backLegBend: 0.1, crouch: 0 },
   launcher: { lean: -0.2, leanGain: -0.1, armBase: 0.8, armReach: 1.4, backArm: -0.4, frontLeg: 0.2, frontLegBend: 0.3, backLeg: -0.2, backLegBend: 0.35, crouch: 0.25 },
   dashAttack: { lean: 0.4, leanGain: 0.1, armBase: 0.5, armReach: 1.6, backArm: -0.7, frontLeg: 0.6, frontLegBend: 0.2, backLeg: -0.4, backLegBend: 0.3, crouch: 0.15 },
 };
+
+/** Configs whose front leg is the striking limb. */
+function isKickPose(cfg: AttackPoseConfig): boolean {
+  return cfg.frontLeg > 0.7;
+}
 
 function buildPose(
   phase: number,
@@ -242,16 +254,38 @@ function buildPose(
     backLegSwing = -0.2;
   } else if (attackKind) {
     const cfg = ATTACK_POSES[attackKind];
-    const p = Math.min(attackProgress * 1.6, 1);
-    torsoLean = (cfg.lean + attackProgress * cfg.leanGain) * facing;
-    frontArmSwing = cfg.armBase + cfg.armReach * p;
-    backArmSwing = cfg.backArm;
-    // Kicking legs extend with the attack progress too.
-    frontLegSwing = cfg.frontLeg * (cfg.frontLeg > 0.7 ? p : 1);
-    backLegSwing = cfg.backLeg;
-    frontLegBend = cfg.frontLegBend;
-    backLegBend = cfg.backLegBend;
-    crouch = cfg.crouch;
+    const ext = attackProgress; // negative = chambered, 1 = full snap
+    const kick = isKickPose(cfg);
+    if (ext < 0) {
+      // Wind-up: coil the body and chamber the striking limb before the snap.
+      const w = Math.min(-ext / 0.45, 1);
+      torsoLean = -0.15 * w * facing;
+      crouch = cfg.crouch + 0.12 * w;
+      if (kick) {
+        frontLegSwing = 0.45 * w;
+        frontLegBend = 0.9 * w; // knee raised, ready to fire
+        backLegSwing = cfg.backLeg;
+        backLegBend = cfg.backLegBend;
+        frontArmSwing = 0.5;
+        backArmSwing = 0.3;
+      } else {
+        frontArmSwing = cfg.armBase - 0.9 * w; // fist drawn back
+        backArmSwing = 0.4;
+        frontLegSwing = cfg.frontLeg * 0.4;
+        backLegSwing = cfg.backLeg;
+        frontLegBend = cfg.frontLegBend;
+        backLegBend = cfg.backLegBend;
+      }
+    } else {
+      torsoLean = (cfg.lean + ext * cfg.leanGain) * facing;
+      frontArmSwing = cfg.armBase + cfg.armReach * ext;
+      backArmSwing = cfg.backArm;
+      frontLegSwing = kick ? cfg.frontLeg * ext : cfg.frontLeg;
+      backLegSwing = cfg.backLeg;
+      frontLegBend = kick ? cfg.frontLegBend + (1 - ext) * 0.4 : cfg.frontLegBend;
+      backLegBend = cfg.backLegBend;
+      crouch = cfg.crouch;
+    }
   } else if (blocking) {
     frontArmSwing = 1.0;
     backArmSwing = 0.8;

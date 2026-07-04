@@ -34,6 +34,17 @@ const MAX_FALL_SPEED = 1950;
 const DIVE_KICK_VX = 480;
 const DIVE_KICK_VY = 1200;
 const DASH_ATTACK_SPEED = 920;
+// MK-style jump kick: committing to an air kick tips you into a diagonal descent.
+const AIR_KICK_VX = 420;
+const AIR_KICK_VY = 360;
+
+// Ground attacks step into the opponent when they go active (One Finger Death Punch lunge).
+const LUNGE_SPEED: Partial<Record<AttackKind, number>> = {
+  lowPunch: 180,
+  highPunch: 300,
+  lowKick: 240,
+  highKick: 360,
+};
 
 const AERIAL_KINDS: Set<AttackKind> = new Set(["airPunch", "airKick", "diveKick"]);
 
@@ -196,6 +207,13 @@ export class Fighter {
         this.attackTimer = data.active;
         this.attackHasHit = false;
         this.events.push({ type: "attackActive", kind });
+        const lunge = LUNGE_SPEED[kind];
+        if (lunge && this.grounded) {
+          this.vx = this.facing * lunge;
+        } else if (kind === "airKick") {
+          this.vx = this.facing * Math.max(Math.abs(this.vx), AIR_KICK_VX);
+          this.vy = Math.max(this.vy, AIR_KICK_VY);
+        }
       } else if (this.attackPhase === "active" && this.attackTimer <= 0) {
         this.attackPhase = "recovery";
         this.attackTimer = data.recovery;
@@ -207,6 +225,9 @@ export class Fighter {
       if (kind === "diveKick" && this.attackPhase === "active") {
         this.vx = this.facing * DIVE_KICK_VX;
         this.vy = DIVE_KICK_VY;
+      } else if (kind === "airKick" && this.attackPhase === "active") {
+        // Hold the diagonal: forward drive while gravity pulls the arc down.
+        this.vx = this.facing * Math.max(Math.abs(this.vx), AIR_KICK_VX);
       } else if (kind === "dashAttack" && this.attackPhase !== "recovery") {
         this.vx = this.facing * DASH_ATTACK_SPEED;
       } else if (this.grounded) {
