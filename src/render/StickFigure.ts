@@ -43,6 +43,10 @@ export class StickFigureView {
   private hitFlash = 0;
   private knockLean = 0;
   private knockLeanVelocity = 0;
+  private stretchX = 1;
+  private stretchXVelocity = 0;
+  private stretchY = 1;
+  private stretchYVelocity = 0;
 
   constructor(color: number) {
     this.color = color;
@@ -66,6 +70,15 @@ export class StickFigureView {
     this.knockLeanVelocity += leanAccel * dt;
     this.knockLean += this.knockLeanVelocity * dt;
 
+    const stretchStiffness = 140;
+    const stretchDamping = 13;
+    const stretchXAccel = (1 - this.stretchX) * stretchStiffness - this.stretchXVelocity * stretchDamping;
+    this.stretchXVelocity += stretchXAccel * dt;
+    this.stretchX += this.stretchXVelocity * dt;
+    const stretchYAccel = (1 - this.stretchY) * stretchStiffness - this.stretchYVelocity * stretchDamping;
+    this.stretchYVelocity += stretchYAccel * dt;
+    this.stretchY += this.stretchYVelocity * dt;
+
     for (const ev of fighter.events) {
       if (ev.type === "jump") {
         this.squash = 1.35;
@@ -80,6 +93,10 @@ export class StickFigureView {
       } else if (ev.type === "dash") {
         this.squash = 1.2;
         this.squashVelocity = 0;
+        this.stretchX = 1.55;
+        this.stretchXVelocity = 0;
+        this.stretchY = 0.78;
+        this.stretchYVelocity = 0;
       } else if (ev.type === "hitTaken") {
         this.hitFlash = 1;
         const heavy = ev.kind === "heavy";
@@ -145,6 +162,7 @@ export class StickFigureView {
     drawSkeleton(this.body, pose, fighter.facing, drawColor, 1);
 
     this.view.position.set(fighter.x, fighter.y);
+    this.view.scale.set(this.stretchX, this.stretchY);
   }
 }
 
