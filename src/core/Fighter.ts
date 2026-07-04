@@ -1,6 +1,7 @@
 import type { Intent } from "./types";
 import type { AttackKind } from "./Combat";
 import { ATTACKS } from "./Combat";
+import type { MapData } from "./MapTypes";
 
 export type FighterEvent =
   | { type: "jump" }
@@ -115,17 +116,19 @@ export class Fighter {
     }
   }
 
-  update(dt: number, intent: Intent, groundY: number, worldMinX: number, worldMaxX: number): void {
+  update(dt: number, intent: Intent, map: MapData): void {
     this.events.length = 0;
+    const worldMinX = 0;
+    const worldMaxX = map.width;
 
     if (this.koed) {
       this.vy += GRAVITY * dt;
       if (this.vy > MAX_FALL_SPEED) this.vy = MAX_FALL_SPEED;
+      const prevY = this.y;
       this.x += this.vx * dt;
       this.y += this.vy * dt;
-      if (this.y >= groundY) {
-        this.y = groundY;
-        this.vy = 0;
+      const ground = resolveGround(this, map, prevY);
+      if (ground.grounded) {
         this.vx = moveToward(this.vx, 0, GROUND_FRICTION * dt);
       }
       return;
@@ -140,23 +143,21 @@ export class Fighter {
       this.vy += gravity * dt;
       if (this.vy > MAX_FALL_SPEED) this.vy = MAX_FALL_SPEED;
       this.vx = moveToward(this.vx, 0, GROUND_FRICTION * 0.5 * dt);
+      const prevY = this.y;
       this.x += this.vx * dt;
       this.y += this.vy * dt;
       if (this.x < worldMinX + this.radius) this.x = worldMinX + this.radius;
       if (this.x > worldMaxX - this.radius) this.x = worldMaxX - this.radius;
       const wasGrounded = this.grounded;
-      if (this.y >= groundY) {
-        const impactSpeed = this.vy;
-        this.y = groundY;
-        this.vy = 0;
-        this.grounded = true;
+      const ground = resolveGround(this, map, prevY);
+      this.grounded = ground.grounded;
+      if (ground.grounded) {
         this.airJumpsUsed = 0;
-        if (!wasGrounded && impactSpeed > 200) {
-          this.events.push({ type: "land", impactSpeed });
+        if (!wasGrounded && ground.impactSpeed > 200) {
+          this.events.push({ type: "land", impactSpeed: ground.impactSpeed });
         }
-      } else {
-        this.grounded = false;
       }
+      this.checkBlastZone(map);
       return;
     }
 
@@ -244,6 +245,7 @@ export class Fighter {
       }
     }
 
+    const prevY = this.y;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
@@ -251,17 +253,22 @@ export class Fighter {
     if (this.x > worldMaxX - this.radius) this.x = worldMaxX - this.radius;
 
     const wasGrounded = this.grounded;
-    if (this.y >= groundY) {
-      const impactSpeed = this.vy;
-      this.y = groundY;
-      this.vy = 0;
-      this.grounded = true;
+    const ground = resolveGround(this, map, prevY);
+    this.grounded = ground.grounded;
+    if (ground.grounded) {
       this.airJumpsUsed = 0;
-      if (!wasGrounded && impactSpeed > 200) {
-        this.events.push({ type: "land", impactSpeed });
+      if (!wasGrounded && ground.impactSpeed > 200) {
+        this.events.push({ type: "land", impactSpeed: ground.impactSpeed });
       }
-    } else {
-      this.grounded = false;
+    }
+    this.checkBlastZone(map);
+  }
+
+  checkBlastZone(map: MapData): void {
+    if (!this.koed && this.y > map.height + 400) {
+      this.health = 0;
+      this.koed = true;
+      this.events.push({ type: "ko" });
     }
   }
 }
@@ -269,4 +276,62 @@ export class Fighter {
 function moveToward(current: number, target: number, maxDelta: number): number {
   if (Math.abs(target - current) <= maxDelta) return target;
   return current + Math.sign(target - current) * maxDelta;
+}
+
+/** Resolves solid walls (blocks all sides) and one-way platforms (land-on-top only). */
+function resolveGround(f: Fighter, map: MapData, prevY: number): { grounded: boolean; impactSpeed: number } {
+  let grounded = false;
+  let impactSpeed = 0;
+
+  for (const w of map.walls) {
+    const left = f.x - f.radius;
+    const right = f.x + f.radius;
+    const top = f.y - f.height;
+    const bottom = f.y;
+    const wLeft = w.x;
+    const wRight = w.x + w.w;
+    const wTop = w.y;
+    const wBottom = w.y + w.h;
+
+    const overlapX = Math.min(right, wRight) - Math.max(left, wLeft);
+    const overlapY = Math.min(bottom, wBottom) - Math.max(top, wTop);
+    if (overlapX <= 0 || overlapY <= 0) continue;
+
+    const fromLeft = right - wLeft;
+    const fromRight = wRight - left;
+    const fromTop = bottom - wTop;
+    const fromBottom = wBottom - top;
+    const minPen = Math.min(fromLeft, fromRight, fromTop, fromBottom);
+
+    if (minPen === fromTop) {
+      f.y = wTop;
+      impactSpeed = Math.max(impactSpeed, f.vy);
+      f.vy = 0;
+      grounded = true;
+    } else if (minPen === fromBottom) {
+      f.y = wBottom + f.height;
+      if (f.vy < 0) f.vy = 0;
+    } else if (minPen === fromLeft) {
+      f.x = wLeft - f.radius;
+      if (f.vx > 0) f.vx = 0;
+    } else {
+      f.x = wRight + f.radius;
+      if (f.vx < 0) f.vx = 0;
+    }
+  }
+
+  if (f.vy >= 0) {
+    for (const p of map.platforms) {
+      const withinX = f.x + f.radius > p.x && f.x - f.radius < p.x + p.w;
+      if (!withinX) continue;
+      if (prevY <= p.y + 0.5 && f.y >= p.y) {
+        f.y = p.y;
+        impactSpeed = Math.max(impactSpeed, f.vy);
+        f.vy = 0;
+        grounded = true;
+      }
+    }
+  }
+
+  return { grounded, impactSpeed };
 }
