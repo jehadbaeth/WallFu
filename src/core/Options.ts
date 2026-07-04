@@ -5,12 +5,24 @@ export interface Options {
   aiDifficulty: "easy" | "medium" | "hard";
   /** Projection mapping mode: map geometry and backgrounds render black so only fighters and effects hit the wall. */
   projectionMode: boolean;
+  /** Round time limit in seconds; 0 disables the timer. */
+  roundTime: number;
+  /** Random throwable weapon spawns during fights. */
+  weapons: boolean;
 }
 
 const STORAGE_KEY = "wallfu.options";
 
 export function defaultOptions(): Options {
-  return { roundsToWin: 2, shakeIntensity: 1, soundVolume: 0.7, aiDifficulty: "medium", projectionMode: false };
+  return {
+    roundsToWin: 2,
+    shakeIntensity: 1,
+    soundVolume: 0.7,
+    aiDifficulty: "medium",
+    projectionMode: false,
+    roundTime: 90,
+    weapons: true,
+  };
 }
 
 export function loadOptions(): Options {

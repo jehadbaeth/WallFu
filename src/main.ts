@@ -38,6 +38,7 @@ import {
   loadMapFromStorage,
 } from "./core/MapTypes";
 import { HazardSystem } from "./game/Hazards";
+import { WeaponSystem } from "./game/Weapons";
 import { BUILTIN_LEVELS, randomMap } from "./game/Levels";
 import { loadOptions, saveOptions } from "./core/Options";
 import { MapEditor, type EditorTool } from "./editor/MapEditor";
@@ -47,6 +48,8 @@ const CYAN = 0x2ee6ff;
 const MAGENTA = 0xff2e88;
 const WHITE = 0xffffff;
 const YELLOW = 0xffe14d;
+const ORANGE = 0xff8a2b;
+const RED = 0xff3344;
 
 const FIXED_DT = 1 / 60;
 const KO_FREEZE_TIME = 1.0;
@@ -136,6 +139,9 @@ async function main() {
   });
   world.addChild(hazards.view);
 
+  const weapons = new WeaponSystem(particles, shockRings, { addShake: (a) => addShake(a) });
+  world.addChild(weapons.view);
+
   const shake = new CameraShake();
   function addShake(amount: number) {
     shake.add(amount * options.shakeIntensity);
@@ -189,6 +195,13 @@ async function main() {
   koText.anchor.set(0.5);
   koText.visible = false;
   uiLayer.addChild(koText);
+
+  const timerText = new Text({
+    text: "",
+    style: new TextStyle({ fontFamily: "monospace", fontSize: 58, fontWeight: "900", fill: WHITE, letterSpacing: 2 }),
+  });
+  timerText.anchor.set(0.5, 0);
+  uiLayer.addChild(timerText);
 
   const matchOverHint = new Text({
     text: "Press Enter for menu",
@@ -272,7 +285,7 @@ async function main() {
   } as const;
   const controlsStyle = new TextStyle(controlsStyleOpts);
   const p1Controls = new Text({
-    text: "P1  A/D Move  W Jump  S Down  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nS+Punch Uppercut   Air S+Kick Dive Kick   Dash+Attack Dash Attack   W at wall Wall Jump",
+    text: "P1  A/D Move  W Jump  S Down  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nS+Punch Uppercut   Air S+Kick Dive Kick   Dash+Attack Dash Attack   HiPunch throws held weapon",
     style: controlsStyle,
   });
   const p2Controls = new Text({
@@ -292,6 +305,7 @@ async function main() {
     p2BarFg.position.set(VIRTUAL_W - 48 - BAR_W, 36);
     dotsLayer1.position.set(48, 76);
     dotsLayer2.position.set(VIRTUAL_W - 48 - BAR_W, 76);
+    timerText.position.set(VIRTUAL_W / 2, 26);
     koText.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2 - 80);
     matchOverHint.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2 - 20);
     p1ComboText.position.set(48, 150);
@@ -347,10 +361,14 @@ async function main() {
   let matchOver = false;
   let firstBloodDone = false;
   let finishHimDone = false;
+  let roundTimer = 0;
+  let suddenDeath = false;
   let p1RunDustTimer = 0;
   let p2RunDustTimer = 0;
   let p1DashStreakTimer = 0;
   let p2DashStreakTimer = 0;
+  let p1FlyTrailTimer = 0;
+  let p2FlyTrailTimer = 0;
 
   function updateRunDust(fighter: Fighter, timer: number, color: number, dt: number): number {
     const speed = Math.abs(fighter.vx);
@@ -359,6 +377,23 @@ async function main() {
       if (timer <= 0) {
         timer = 0.09;
         particles.dustPuff(fighter.x - fighter.facing * 10, fighter.y, color, 3);
+      }
+    } else {
+      timer = 0;
+    }
+    return timer;
+  }
+
+  function updateFlyTrail(fighter: Fighter, timer: number, dt: number): number {
+    // Fighters sent flying by a big hit burn a trail while they tumble.
+    const flySpeed = Math.hypot(fighter.vx, fighter.vy);
+    if (fighter.isStunned && flySpeed > 700) {
+      timer -= dt;
+      if (timer <= 0) {
+        timer = 0.035;
+        const angle = Math.atan2(-fighter.vy, -fighter.vx);
+        particles.streakBurst(fighter.x, fighter.y - 60, ORANGE, 2, { angle, speed: 260, spread: 0.6, size: 5 });
+        particles.burst(fighter.x, fighter.y - 60, RED, 1, { speed: 60, spread: Math.PI * 2, gravity: -120, size: 4, glow: true });
       }
     } else {
       timer = 0;
@@ -429,17 +464,19 @@ async function main() {
         glow: true,
       });
       if (isKickKind(ev.kind)) {
-        // Crescent of speed lines tracing the kick arc.
+        // Crescent of speed lines tracing the kick arc; the high kick burns.
+        const fire = ev.kind === "highKick";
         const tipX = fighter.x + fighter.facing * (18 + data.range);
-        const tipY = fighter.y - data.height * (ev.kind === "highKick" ? 0.85 : 0.5);
-        particles.streakBurst(tipX, tipY, WHITE, heavy ? 9 : 6, {
+        const tipY = fighter.y - data.height * (fire ? 0.85 : 0.5);
+        particles.streakBurst(tipX, tipY, fire ? ORANGE : WHITE, heavy ? 10 : 6, {
           angle: fighter.facing > 0 ? -0.6 : Math.PI + 0.6,
           spread: 1.8,
           speed: 460,
-          size: 4,
+          size: fire ? 5 : 4,
         });
-        if (ev.kind === "highKick") {
-          shockRings.spawn(tipX, tipY, color, 55, 0.2, 4);
+        if (fire) {
+          particles.burst(tipX, tipY, RED, 8, { speed: 200, spread: Math.PI, gravity: -100, size: 5, glow: true });
+          shockRings.spawn(tipX, tipY, ORANGE, 60, 0.22, 5);
         }
       }
       if (ev.kind === "diveKick") {
@@ -457,14 +494,27 @@ async function main() {
       addShake(heavy ? 0.2 : 0.1);
       return;
     }
-    // Sparks fly along the knockback direction (straight up for launchers).
-    const knockAngle = kind === "launcher" ? -Math.PI / 2 : dirX > 0 ? 0 : Math.PI;
+    // Sparks fly along the knockback direction (straight up for launchers/sweeps, down for dive kicks).
+    const knockAngle =
+      kind === "launcher" || kind === "lowKick" ? -Math.PI / 2 : kind === "diveKick" ? Math.PI / 2 : dirX > 0 ? 0 : Math.PI;
     particles.burst(x, y, YELLOW, heavy ? 36 : 22, { speed: heavy ? 620 : 440, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5, glow: true });
     particles.burst(x, y, WHITE, heavy ? 14 : 8, { speed: 260, spread: Math.PI * 2, gravity: 300, size: 3, glow: true });
     particles.streakBurst(x, y, WHITE, heavy ? 12 : 6, { angle: knockAngle, speed: heavy ? 640 : 460, spread: 0.9, size: heavy ? 5 : 4 });
     shockRings.spawn(x, y, heavy ? YELLOW : WHITE, heavy ? 150 : 85, heavy ? 0.42 : 0.26, heavy ? 9 : 6);
     if (heavy) shockRings.spawn(x, y, WHITE, 90, 0.3, 5);
-    if (kind === "launcher") {
+    if (kind === "highKick") {
+      // Liu Kang special: the hit erupts in fire and the victim leaves a flame trail while flying.
+      particles.burst(x, y, ORANGE, 26, { speed: 560, spread: Math.PI * 1.4, angle: knockAngle, gravity: 300, size: 6, glow: true });
+      particles.burst(x, y, RED, 12, { speed: 340, spread: Math.PI * 2, gravity: 200, size: 5, glow: true });
+      shockRings.spawn(x, y, ORANGE, 130, 0.38, 7);
+    } else if (kind === "lowKick") {
+      // Sweep: dust kicked along the ground plus a rising pop.
+      particles.dustPuff(x, y + 30, WHITE, 12);
+      particles.streakBurst(x, y, YELLOW, 8, { angle: -Math.PI / 2, speed: 480, spread: 0.7, size: 4 });
+    } else if (kind === "diveKick") {
+      // Spike: force slams downward.
+      particles.streakBurst(x, y, CYAN, 8, { angle: Math.PI / 2, speed: 520, spread: 0.6, size: 4 });
+    } else if (kind === "launcher") {
       // Rising column to sell the launch.
       particles.streakBurst(x, y - 30, YELLOW, 10, { angle: -Math.PI / 2, speed: 700, spread: 0.5, size: 5 });
       shockRings.spawn(x, y - 60, YELLOW, 110, 0.35, 6);
@@ -474,23 +524,40 @@ async function main() {
       particles.streakBurst(x, y, YELLOW, 8, { angle: -Math.PI / 2, speed: 520, spread: 2.4, size: 4 });
       shockRings.spawn(x, y, WHITE, 60, 0.2, 4);
     }
-    addShake(heavy ? 0.65 : 0.38);
+    addShake(kind === "highKick" ? 0.8 : heavy ? 0.65 : 0.38);
     screenFlash = heavy ? 0.35 : 0.12;
-    zoomPunch = heavy ? 0.07 : 0.03;
+    zoomPunch = kind === "highKick" ? 0.09 : heavy ? 0.07 : 0.03;
     zoomPunchVelocity = 0;
   }
 
-  function beginRoundEnd(loser: "p1" | "p2") {
+  function beginRoundEnd(loser: "p1" | "p2", label = "K.O.") {
     koPending = loser;
     koFreezeTimer = KO_FREEZE_TIME;
-    koText.text = "K.O.";
+    koText.text = label;
     koText.visible = true;
     addShake(0.4);
     zoomPunch = 0.12;
     zoomPunchVelocity = 0;
     const victim = loser === "p1" ? player1 : player2;
     shockRings.spawn(victim.x, victim.y - 60, WHITE, 180, 0.5, 10);
-    sound.ko();
+    if (label === "TIME!") {
+      if (!sound.voice(["vo-time"])) sound.announce(1.1);
+    } else {
+      sound.ko();
+    }
+  }
+
+  function handleTimeOut() {
+    if (player1.health === player2.health) {
+      // Dead even: sudden death, next clean hit decides it.
+      suddenDeath = true;
+      player1.health = 1;
+      player2.health = 1;
+      announce("SUDDEN DEATH!", RED, 1.4, ["vo-sudden-death"]);
+      addShake(0.3);
+      return;
+    }
+    beginRoundEnd(player1.health < player2.health ? "p1" : "p2", "TIME!");
   }
 
   function resetRound() {
@@ -507,6 +574,9 @@ async function main() {
     finishHimDone = false;
     aiController?.reset();
     hazards.resetRound();
+    weapons.resetRound();
+    roundTimer = options.roundTime;
+    suddenDeath = false;
     const roundNum = p1Wins + p2Wins + 1;
     const bothAtMatchPoint = p1Wins === options.roundsToWin - 1 && p2Wins === options.roundsToWin - 1;
     const roundCall = bothAtMatchPoint ? "vo-final-round" : roundNum <= 5 ? `vo-round-${roundNum}` : null;
@@ -520,6 +590,7 @@ async function main() {
     fightMap = cloneMap(currentMap);
     fightMap.walls.push(...(fightMap.polygons ?? []).flatMap((p) => polygonToStrips(p.points)));
     hazards.start(fightMap, [player1, player2]);
+    weapons.start(fightMap, [player1, player2], options.weapons);
     drawMapGeometry();
     p1Wins = 0;
     p2Wins = 0;
@@ -649,7 +720,24 @@ async function main() {
     const d = options.aiDifficulty;
     document.getElementById("opt-ai-value")!.textContent = d.charAt(0).toUpperCase() + d.slice(1);
     document.getElementById("opt-projection")!.textContent = options.projectionMode ? "On" : "Off";
+    document.getElementById("opt-time-value")!.textContent = options.roundTime > 0 ? `${options.roundTime}s` : "Off";
+    document.getElementById("opt-weapons")!.textContent = options.weapons ? "On" : "Off";
   }
+  document.getElementById("opt-time-down")!.addEventListener("click", () => {
+    options.roundTime = Math.max(0, options.roundTime - 15);
+    saveOptions(options);
+    refreshOptionsUI();
+  });
+  document.getElementById("opt-time-up")!.addEventListener("click", () => {
+    options.roundTime = Math.min(300, options.roundTime + 15);
+    saveOptions(options);
+    refreshOptionsUI();
+  });
+  document.getElementById("opt-weapons")!.addEventListener("click", () => {
+    options.weapons = !options.weapons;
+    saveOptions(options);
+    refreshOptionsUI();
+  });
   function applyProjectionMode() {
     // In projection mode nothing but the fighters and effects should emit light:
     // the real objects on the wall play the role of the platforms.
@@ -1032,10 +1120,26 @@ async function main() {
         const intent2 = aiController
           ? aiController.poll(FIXED_DT, player2, player1, fightMap)
           : mergeIntents(player2Input.poll(), player2Gamepad.poll());
+        // Holding a weapon repurposes the high punch button as the throw.
+        if (intent1.highPunchPressed && weapons.holding(player1) && weapons.tryThrow(player1)) {
+          intent1.highPunchPressed = false;
+          intent1.highPunch = false;
+        }
+        if (intent2.highPunchPressed && weapons.holding(player2) && weapons.tryThrow(player2)) {
+          intent2.highPunchPressed = false;
+          intent2.highPunch = false;
+        }
         player1.update(FIXED_DT, intent1, fightMap);
         player2.update(FIXED_DT, intent2, fightMap);
 
-        if (!koPending && !matchOver) hazards.update(FIXED_DT);
+        if (!koPending && !matchOver) {
+          hazards.update(FIXED_DT);
+          weapons.update(FIXED_DT);
+          if (options.roundTime > 0 && !suddenDeath) {
+            roundTimer -= FIXED_DT;
+            if (roundTimer <= 0) handleTimeOut();
+          }
+        }
 
         for (const ev of player1.events) handleMovementEvent(player1, ev);
         for (const ev of player2.events) handleMovementEvent(player2, ev);
@@ -1044,6 +1148,8 @@ async function main() {
         p2RunDustTimer = updateRunDust(player2, p2RunDustTimer, MAGENTA, FIXED_DT);
         p1DashStreakTimer = updateDashStreaks(player1, p1DashStreakTimer, CYAN, FIXED_DT);
         p2DashStreakTimer = updateDashStreaks(player2, p2DashStreakTimer, MAGENTA, FIXED_DT);
+        p1FlyTrailTimer = updateFlyTrail(player1, p1FlyTrailTimer, FIXED_DT);
+        p2FlyTrailTimer = updateFlyTrail(player2, p2FlyTrailTimer, FIXED_DT);
 
         const hits = resolveCombat(player1, player2);
         for (const hit of hits) {
@@ -1114,6 +1220,23 @@ async function main() {
     particles.update(frameDt);
     shockRings.update(frameDt);
     hazards.draw();
+    weapons.draw();
+
+    // Round timer readout: red pulse in the final ten seconds.
+    if (options.roundTime > 0 && !suddenDeath && !matchOver) {
+      const secs = Math.max(0, Math.ceil(roundTimer));
+      timerText.text = String(secs);
+      timerText.visible = true;
+      if (secs <= 10) {
+        timerText.tint = RED;
+        timerText.scale.set(1 + 0.08 * Math.sin(performance.now() / 90));
+      } else {
+        timerText.tint = WHITE;
+        timerText.scale.set(1);
+      }
+    } else {
+      timerText.visible = false;
+    }
 
     drawHealthBar(p1BarBg, p1BarFg, player1.health, player1.maxHealth, CYAN, false);
     drawHealthBar(p2BarBg, p2BarFg, player2.health, player2.maxHealth, MAGENTA, true);
