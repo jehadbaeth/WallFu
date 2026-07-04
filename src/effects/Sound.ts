@@ -1,10 +1,85 @@
-// Fully synthesized SFX using the Web Audio API — no external audio assets.
+// Sample-based SFX engine using Kenney's CC0 sound packs (see public/sfx/CREDITS.md),
+// layered with light Web Audio synthesis for sub-bass weight. Until samples finish
+// loading (they load lazily after the first user gesture), synthesis fills in.
 type OscType = "sine" | "square" | "sawtooth" | "triangle";
+
+const SFX_FILES = [
+  "impactpunch-medium-000.ogg",
+  "impactpunch-medium-001.ogg",
+  "impactpunch-medium-002.ogg",
+  "impactpunch-medium-003.ogg",
+  "impactpunch-medium-004.ogg",
+  "impactpunch-heavy-000.ogg",
+  "impactpunch-heavy-001.ogg",
+  "impactpunch-heavy-002.ogg",
+  "impactpunch-heavy-003.ogg",
+  "impactpunch-heavy-004.ogg",
+  "impactsoft-medium-000.ogg",
+  "impactsoft-medium-001.ogg",
+  "impactsoft-medium-002.ogg",
+  "impactsoft-heavy-000.ogg",
+  "impactsoft-heavy-001.ogg",
+  "impactsoft-heavy-002.ogg",
+  "impactplank-medium-000.ogg",
+  "impactplank-medium-001.ogg",
+  "footstep-concrete-000.ogg",
+  "footstep-concrete-001.ogg",
+  "footstep-concrete-002.ogg",
+  "cloth1.ogg",
+  "cloth2.ogg",
+  "cloth3.ogg",
+  "cloth4.ogg",
+  "click-001.ogg",
+  "click-002.ogg",
+  "confirmation-001.ogg",
+  "vo-fight.ogg",
+  "vo-ready.ogg",
+  "vo-round-1.ogg",
+  "vo-round-2.ogg",
+  "vo-round-3.ogg",
+  "vo-round-4.ogg",
+  "vo-round-5.ogg",
+  "vo-final-round.ogg",
+  "vo-player-1.ogg",
+  "vo-player-2.ogg",
+  "vo-winner.ogg",
+  "vo-you-win.ogg",
+  "vo-you-lose.ogg",
+  "vo-flawless-victory.ogg",
+  "vo-game-over.ogg",
+  "vo-combo.ogg",
+  "vo-combo-breaker.ogg",
+  "vo-prepare-yourself.ogg",
+  "vo-2.ogg",
+  "vo-3.ogg",
+  "vo-4.ogg",
+  "vo-5.ogg",
+  "vo-6.ogg",
+  "vo-7.ogg",
+  "vo-8.ogg",
+  "vo-9.ogg",
+  "vo-10.ogg",
+] as const;
+
+const PUNCH_MEDIUM = ["impactpunch-medium-000", "impactpunch-medium-001", "impactpunch-medium-002", "impactpunch-medium-003", "impactpunch-medium-004"];
+const PUNCH_HEAVY = ["impactpunch-heavy-000", "impactpunch-heavy-001", "impactpunch-heavy-002", "impactpunch-heavy-003", "impactpunch-heavy-004"];
+const SOFT_MEDIUM = ["impactsoft-medium-000", "impactsoft-medium-001", "impactsoft-medium-002"];
+const SOFT_HEAVY = ["impactsoft-heavy-000", "impactsoft-heavy-001", "impactsoft-heavy-002"];
+const PLANK = ["impactplank-medium-000", "impactplank-medium-001"];
+const FOOTSTEPS = ["footstep-concrete-000", "footstep-concrete-001", "footstep-concrete-002"];
+const WHOOSHES = ["cloth1", "cloth2", "cloth3", "cloth4"];
+const CLICKS = ["click-001", "click-002"];
+
+function pick<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  private buffers = new Map<string, AudioBuffer>();
+  private loadStarted = false;
   private volume = 0.7;
 
   setVolume(v: number): void {
@@ -15,10 +90,11 @@ class SoundEngine {
   /** Must be called from inside a user-gesture handler (click/keydown) to satisfy autoplay policy. */
   unlock(): void {
     this.ensureContext();
+    this.loadSamples();
   }
 
   private ensureContext(): AudioContext | null {
-    if (this.volume <= 0) return null;
+    if (this.volume <= 0 && !this.ctx) return null;
     if (!this.ctx) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return null;
@@ -32,12 +108,69 @@ class SoundEngine {
     return this.ctx;
   }
 
+  private loadSamples(): void {
+    if (this.loadStarted) return;
+    this.loadStarted = true;
+    const ctx = this.ensureContext();
+    if (!ctx) {
+      this.loadStarted = false;
+      return;
+    }
+    const base = `${import.meta.env.BASE_URL}sfx/`;
+    for (const file of SFX_FILES) {
+      fetch(base + file)
+        .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(String(res.status)))))
+        .then((data) => ctx.decodeAudioData(data))
+        .then((buffer) => this.buffers.set(file.replace(/\.ogg$/, ""), buffer))
+        .catch(() => {
+          // Missing sample: synthesis fallback keeps working.
+        });
+    }
+  }
+
   private buildNoiseBuffer(ctx: AudioContext): AudioBuffer {
     const length = Math.floor(ctx.sampleRate * 0.4);
     const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
     return buffer;
+  }
+
+  /** Plays a sample by name. Returns false if not loaded (caller may fall back to synthesis). */
+  private sample(name: string, opts?: { volume?: number; rate?: number; rateVar?: number; when?: number }): boolean {
+    const ctx = this.ensureContext();
+    const buffer = this.buffers.get(name);
+    if (!ctx || !this.master || !buffer) return false;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const rateVar = opts?.rateVar ?? 0.06;
+    src.playbackRate.value = (opts?.rate ?? 1) * (1 + (Math.random() * 2 - 1) * rateVar);
+    const gain = ctx.createGain();
+    gain.gain.value = opts?.volume ?? 1;
+    src.connect(gain);
+    gain.connect(this.master);
+    src.start(ctx.currentTime + (opts?.when ?? 0));
+    return true;
+  }
+
+  /** Plays announcer lines back to back (e.g. "round one" ... "fight"). Returns false if any line is missing. */
+  voice(names: string[], opts?: { volume?: number; gap?: number }): boolean {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.master) return false;
+    const buffers = names.map((n) => this.buffers.get(n));
+    if (buffers.some((b) => !b)) return false;
+    let when = 0;
+    for (const buffer of buffers as AudioBuffer[]) {
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const gain = ctx.createGain();
+      gain.gain.value = opts?.volume ?? 0.9;
+      src.connect(gain);
+      gain.connect(this.master);
+      src.start(ctx.currentTime + when);
+      when += buffer.duration + (opts?.gap ?? 0.08);
+    }
+    return true;
   }
 
   private tone(freq: number, duration: number, opts?: { type?: OscType; endFreq?: number; gain?: number; attack?: number }): void {
@@ -80,73 +213,95 @@ class SoundEngine {
     src.stop(now + duration + 0.02);
   }
 
-  /** Small random pitch variance so repeated sounds never feel machine-gun identical. */
   private vary(freq: number, amount = 0.12): number {
     return freq * (1 + (Math.random() * 2 - 1) * amount);
   }
 
   jump(): void {
-    this.tone(this.vary(420), 0.11, { type: "square", endFreq: 760, gain: 0.14 });
-    this.tone(this.vary(840), 0.07, { type: "sine", endFreq: 1200, gain: 0.06 });
+    if (!this.sample(pick(WHOOSHES), { volume: 0.7, rate: 1.5, rateVar: 0.12 })) {
+      this.tone(this.vary(420), 0.11, { type: "square", endFreq: 760, gain: 0.14 });
+    }
   }
 
   land(strength: number): void {
-    this.noiseHit(0.07 + strength * 0.05, { gain: 0.18 + strength * 0.22, filterFreq: this.vary(220) });
-    if (strength > 0.4) this.tone(this.vary(70), 0.12, { type: "sine", endFreq: 40, gain: 0.2 });
+    const hard = strength > 0.45;
+    if (!this.sample(pick(hard ? SOFT_HEAVY : FOOTSTEPS), { volume: 0.5 + strength * 0.5, rate: hard ? 0.9 : 1.1 })) {
+      this.noiseHit(0.07 + strength * 0.05, { gain: 0.18 + strength * 0.22, filterFreq: this.vary(220) });
+    }
+    if (hard) this.tone(this.vary(70), 0.12, { type: "sine", endFreq: 40, gain: 0.2 });
   }
 
   dash(): void {
-    this.tone(this.vary(220), 0.13, { type: "sawtooth", endFreq: 60, gain: 0.12 });
-    this.noiseHit(0.09, { gain: 0.12, filterFreq: this.vary(3000), type: "highpass" });
+    if (!this.sample(pick(WHOOSHES), { volume: 0.8, rate: 1.15, rateVar: 0.1 })) {
+      this.tone(this.vary(220), 0.13, { type: "sawtooth", endFreq: 60, gain: 0.12 });
+    }
+  }
+
+  whoosh(big: boolean): void {
+    if (!this.sample(pick(WHOOSHES), { volume: big ? 0.75 : 0.5, rate: big ? 0.85 : 1.35, rateVar: 0.12 })) {
+      this.noiseHit(big ? 0.14 : 0.08, { gain: big ? 0.13 : 0.08, filterFreq: big ? 900 : 1500 });
+    }
   }
 
   hit(heavy: boolean, blocked: boolean, kick = false): void {
     if (blocked) {
-      this.noiseHit(0.08, { gain: 0.22, filterFreq: this.vary(2400) });
-      this.tone(this.vary(320), 0.06, { type: "square", gain: 0.1 });
+      if (!this.sample(pick(PLANK), { volume: 0.5, rate: 1.2 })) {
+        this.noiseHit(0.08, { gain: 0.22, filterFreq: this.vary(2400) });
+      }
       return;
     }
-    // Three layers: sub thump for weight, mid crack for texture, high snap transient.
+    // Real punch impact, pitched down for kicks/heavies, plus a synth sub layer for weight.
+    const played = this.sample(pick(heavy ? PUNCH_HEAVY : PUNCH_MEDIUM), {
+      volume: heavy ? 1 : 0.8,
+      rate: kick ? 0.85 : 1,
+      rateVar: 0.1,
+    });
+    if (!played) {
+      const crack = kick ? (heavy ? 300 : 520) : heavy ? 480 : 1000;
+      this.noiseHit(heavy ? 0.16 : 0.08, { gain: heavy ? 0.42 : 0.26, filterFreq: this.vary(crack) });
+    }
     const sub = kick ? (heavy ? 62 : 95) : heavy ? 85 : 130;
-    const crack = kick ? (heavy ? 300 : 520) : heavy ? 480 : 1000;
-    this.tone(this.vary(sub), heavy ? 0.26 : 0.12, { type: "sine", endFreq: 32, gain: heavy ? 0.5 : 0.26 });
-    this.noiseHit(heavy ? 0.16 : 0.08, { gain: heavy ? 0.42 : 0.26, filterFreq: this.vary(crack) });
-    this.noiseHit(0.03, { gain: heavy ? 0.3 : 0.2, filterFreq: this.vary(4500), type: "highpass" });
+    this.tone(this.vary(sub), heavy ? 0.24 : 0.1, { type: "sine", endFreq: 32, gain: heavy ? 0.4 : 0.18 });
   }
 
-  /** Rising two-tone stinger for announcements (FIGHT!, FIRST BLOOD, ...). */
+  wallJump(): void {
+    this.sample(pick(FOOTSTEPS), { volume: 0.6, rate: 1.2 });
+    if (!this.sample(pick(WHOOSHES), { volume: 0.6, rate: 1.4 })) {
+      this.tone(this.vary(500), 0.1, { type: "square", endFreq: 900, gain: 0.15 });
+    }
+  }
+
+  wallBounce(): void {
+    if (!this.sample(pick(SOFT_MEDIUM), { volume: 0.8, rate: 0.9 })) {
+      this.noiseHit(0.12, { gain: 0.3, filterFreq: 700 });
+    }
+    this.tone(this.vary(220), 0.16, { type: "triangle", endFreq: 480, gain: 0.16 });
+  }
+
+  ko(): void {
+    this.sample(pick(PUNCH_HEAVY), { volume: 1, rate: 0.75 });
+    this.tone(520, 0.55, { type: "sawtooth", endFreq: 35, gain: 0.3 });
+    this.noiseHit(0.3, { gain: 0.24, filterFreq: 280 });
+  }
+
+  click(): void {
+    if (!this.sample(pick(CLICKS), { volume: 0.7 })) {
+      this.tone(600, 0.05, { type: "square", gain: 0.12 });
+    }
+  }
+
+  confirm(): void {
+    if (!this.sample("confirmation-001", { volume: 0.8 })) {
+      this.tone(660, 0.16, { type: "triangle", endFreq: 880, gain: 0.18 });
+    }
+  }
+
+  /** Rising two-tone stinger; used when an announcement has no voice line. */
   announce(excitement = 1): void {
     const base = this.vary(340, 0.05) * (0.9 + excitement * 0.15);
     this.tone(base, 0.14, { type: "square", endFreq: base * 1.5, gain: 0.16 });
     this.tone(base * 1.5, 0.22, { type: "square", endFreq: base * 2.2, gain: 0.14, attack: 0.03 });
     this.noiseHit(0.12, { gain: 0.1, filterFreq: 1800 });
-  }
-
-  whoosh(big: boolean): void {
-    this.noiseHit(big ? 0.14 : 0.08, { gain: big ? 0.13 : 0.08, filterFreq: big ? 900 : 1500 });
-  }
-
-  wallJump(): void {
-    this.tone(500, 0.1, { type: "square", endFreq: 900, gain: 0.15 });
-    this.noiseHit(0.06, { gain: 0.14, filterFreq: 2000 });
-  }
-
-  wallBounce(): void {
-    this.noiseHit(0.12, { gain: 0.3, filterFreq: 700 });
-    this.tone(220, 0.16, { type: "triangle", endFreq: 480, gain: 0.2 });
-  }
-
-  ko(): void {
-    this.tone(520, 0.55, { type: "sawtooth", endFreq: 35, gain: 0.32 });
-    this.noiseHit(0.3, { gain: 0.28, filterFreq: 280 });
-  }
-
-  click(): void {
-    this.tone(600, 0.05, { type: "square", gain: 0.12 });
-  }
-
-  roundStart(): void {
-    this.tone(660, 0.16, { type: "triangle", endFreq: 880, gain: 0.18 });
   }
 }
 

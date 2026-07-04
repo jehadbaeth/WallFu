@@ -180,7 +180,7 @@ async function main() {
   let announceScale = 1;
   let announceScaleVel = 0;
 
-  function announce(message: string, color = YELLOW, excitement = 1) {
+  function announce(message: string, color = YELLOW, excitement = 1, voice?: string[]) {
     announceText.text = message;
     announceText.tint = color;
     announceText.visible = true;
@@ -188,7 +188,8 @@ async function main() {
     announceTimer = 1.25;
     announceScale = 2.6;
     announceScaleVel = 0;
-    sound.announce(excitement);
+    // Prefer a real announcer line; fall back to the synth stinger while samples load.
+    if (!voice || !sound.voice(voice)) sound.announce(excitement);
   }
 
   function updateAnnouncement(dt: number) {
@@ -466,7 +467,10 @@ async function main() {
     p2ComboTimer = 0;
     finishHimDone = false;
     aiController?.reset();
-    announce("FIGHT!", YELLOW, 1.2);
+    const roundNum = p1Wins + p2Wins + 1;
+    const bothAtMatchPoint = p1Wins === options.roundsToWin - 1 && p2Wins === options.roundsToWin - 1;
+    const roundCall = bothAtMatchPoint ? "vo-final-round" : roundNum <= 5 ? `vo-round-${roundNum}` : null;
+    announce("FIGHT!", YELLOW, 1.2, roundCall ? [roundCall, "vo-fight"] : ["vo-fight"]);
   }
 
   function startMatch(map: MapData) {
@@ -489,6 +493,11 @@ async function main() {
 
   function updateComboText(text: Text, count: number) {
     text.text = count >= 2 ? `${count} HITS` : "";
+  }
+
+  /** Announcer line for a finished combo, e.g. "five" + "combo". Lines exist for 2-10. */
+  function comboVoice(count: number): string[] | undefined {
+    return count >= 2 && count <= 10 ? [`vo-${count}`, "vo-combo"] : undefined;
   }
 
   // --- Game state / menu / options / editor wiring ---
@@ -784,10 +793,14 @@ async function main() {
         drawRoundDots(dotsLayer1, p1Wins);
         drawRoundDots(dotsLayer2, p2Wins);
         if (p1Wins >= options.roundsToWin || p2Wins >= options.roundsToWin) {
-          koText.text = p1Wins > p2Wins ? "P1 WINS!" : "P2 WINS!";
+          const p1Won = p1Wins > p2Wins;
+          koText.text = p1Won ? "P1 WINS!" : "P2 WINS!";
           koText.visible = true;
           matchOverHint.visible = true;
           matchOver = true;
+          const winner = p1Won ? player1 : player2;
+          const flawless = winner.health >= winner.maxHealth;
+          sound.voice([p1Won ? "vo-player-1" : "vo-player-2", flawless ? "vo-flawless-victory" : "vo-winner"]);
         } else {
           resetRound();
         }
@@ -860,14 +873,14 @@ async function main() {
       if (p1ComboTimer > 0) {
         p1ComboTimer -= frameDt;
         if (p1ComboTimer <= 0) {
-          if (p1ComboCount >= 3) announce(`${p1ComboCount} HIT COMBO!`, CYAN, 1 + p1ComboCount * 0.05);
+          if (p1ComboCount >= 3) announce(`${p1ComboCount} HIT COMBO!`, CYAN, 1 + p1ComboCount * 0.05, comboVoice(p1ComboCount));
           p1ComboCount = 0;
         }
       }
       if (p2ComboTimer > 0) {
         p2ComboTimer -= frameDt;
         if (p2ComboTimer <= 0) {
-          if (p2ComboCount >= 3) announce(`${p2ComboCount} HIT COMBO!`, MAGENTA, 1 + p2ComboCount * 0.05);
+          if (p2ComboCount >= 3) announce(`${p2ComboCount} HIT COMBO!`, MAGENTA, 1 + p2ComboCount * 0.05, comboVoice(p2ComboCount));
           p2ComboCount = 0;
         }
       }
