@@ -3,10 +3,14 @@ export interface Intent {
   jump: boolean;
   jumpPressed: boolean;
   fastFall: boolean;
-  light: boolean;
-  lightPressed: boolean;
-  heavy: boolean;
-  heavyPressed: boolean;
+  highPunch: boolean;
+  highPunchPressed: boolean;
+  lowPunch: boolean;
+  lowPunchPressed: boolean;
+  highKick: boolean;
+  highKickPressed: boolean;
+  lowKick: boolean;
+  lowKickPressed: boolean;
   block: boolean;
   dash: boolean;
   dashPressed: boolean;
@@ -18,10 +22,14 @@ export function emptyIntent(): Intent {
     jump: false,
     jumpPressed: false,
     fastFall: false,
-    light: false,
-    lightPressed: false,
-    heavy: false,
-    heavyPressed: false,
+    highPunch: false,
+    highPunchPressed: false,
+    lowPunch: false,
+    lowPunchPressed: false,
+    highKick: false,
+    highKickPressed: false,
+    lowKick: false,
+    lowKickPressed: false,
     block: false,
     dash: false,
     dashPressed: false,

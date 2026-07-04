@@ -1,6 +1,15 @@
 import type { Fighter } from "./Fighter";
 
-export type AttackKind = "light" | "heavy" | "airLight" | "airHeavy" | "diveKick" | "launcher" | "dashAttack";
+export type AttackKind =
+  | "highPunch"
+  | "lowPunch"
+  | "highKick"
+  | "lowKick"
+  | "airPunch"
+  | "airKick"
+  | "diveKick"
+  | "launcher"
+  | "dashAttack";
 
 export interface AttackData {
   startup: number;
@@ -18,31 +27,60 @@ export interface AttackData {
 }
 
 export const ATTACKS: Record<AttackKind, AttackData> = {
-  light: {
-    startup: 0.05,
-    active: 0.08,
-    recovery: 0.1,
-    damage: 6,
-    knockback: 380,
-    upKnockback: 120,
-    hitstun: 0.22,
-    range: 58,
-    height: 70,
-    hitstop: 0.035,
+  // Fast jab: lowest commitment, chains into itself.
+  lowPunch: {
+    startup: 0.04,
+    active: 0.06,
+    recovery: 0.08,
+    damage: 4,
+    knockback: 260,
+    upKnockback: 60,
+    hitstun: 0.18,
+    range: 52,
+    height: 74,
+    hitstop: 0.03,
   },
-  heavy: {
-    startup: 0.12,
-    active: 0.1,
-    recovery: 0.22,
-    damage: 14,
-    knockback: 680,
-    upKnockback: 280,
-    hitstun: 0.34,
+  // Straight punch to the head: solid damage and pushback.
+  highPunch: {
+    startup: 0.07,
+    active: 0.08,
+    recovery: 0.12,
+    damage: 8,
+    knockback: 440,
+    upKnockback: 160,
+    hitstun: 0.24,
+    range: 62,
+    height: 92,
+    hitstop: 0.045,
+  },
+  // Sweep at the ankles: hits low and pops the opponent up a bit.
+  lowKick: {
+    startup: 0.08,
+    active: 0.09,
+    recovery: 0.16,
+    damage: 7,
+    knockback: 360,
+    upKnockback: 260,
+    hitstun: 0.3,
     range: 68,
-    height: 82,
+    height: 42,
+    hitstop: 0.05,
+    bottomOffset: 0,
+  },
+  // Roundhouse: the big ground hit.
+  highKick: {
+    startup: 0.11,
+    active: 0.1,
+    recovery: 0.2,
+    damage: 12,
+    knockback: 660,
+    upKnockback: 320,
+    hitstun: 0.34,
+    range: 74,
+    height: 96,
     hitstop: 0.07,
   },
-  airLight: {
+  airPunch: {
     startup: 0.04,
     active: 0.1,
     recovery: 0.08,
@@ -55,18 +93,18 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     hitstop: 0.03,
     bottomOffset: 8,
   },
-  airHeavy: {
-    startup: 0.1,
+  airKick: {
+    startup: 0.09,
     active: 0.12,
-    recovery: 0.18,
-    damage: 13,
+    recovery: 0.16,
+    damage: 11,
     knockback: 560,
-    upKnockback: 420,
-    hitstun: 0.36,
-    range: 66,
+    upKnockback: 400,
+    hitstun: 0.34,
+    range: 68,
     height: 90,
-    hitstop: 0.07,
-    bottomOffset: 8,
+    hitstop: 0.065,
+    bottomOffset: 10,
   },
   diveKick: {
     startup: 0.06,
@@ -109,7 +147,12 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
 
 /** Kinds that should read as "big hits" for effects, sounds, and reactions. */
 export function isHeavyKind(kind: AttackKind): boolean {
-  return kind === "heavy" || kind === "airHeavy" || kind === "launcher";
+  return kind === "highKick" || kind === "airKick" || kind === "launcher";
+}
+
+/** Kicks get a heavier, lower-pitched impact sound than punches. */
+export function isKickKind(kind: AttackKind): boolean {
+  return kind === "highKick" || kind === "lowKick" || kind === "airKick" || kind === "diveKick";
 }
 
 interface Rect {

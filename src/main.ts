@@ -1,6 +1,6 @@
 import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
 import { Fighter, type FighterEvent } from "./core/Fighter";
-import { resolveCombat, isHeavyKind, ATTACKS, type AttackKind } from "./core/Combat";
+import { resolveCombat, isHeavyKind, isKickKind, ATTACKS, type AttackKind } from "./core/Combat";
 import { AIController, AI_DIFFICULTIES } from "./core/AIController";
 import { KeyboardIntentSource, P1_BINDINGS, P2_BINDINGS } from "./core/KeyboardInput";
 import { GamepadIntentSource, mergeIntents } from "./core/GamepadInput";
@@ -161,11 +161,11 @@ async function main() {
   } as const;
   const controlsStyle = new TextStyle(controlsStyleOpts);
   const p1Controls = new Text({
-    text: "P1  A/D Move  W Jump  S Down  F Light  G Heavy  H Block  J Dash\nS+G Launcher   Air S+F Dive Kick   Dash+F/G Dash Attack   W at wall Wall Jump",
+    text: "P1  A/D Move  W Jump  S Down  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nS+Punch Uppercut   Air S+Kick Dive Kick   Dash+Attack Dash Attack   W at wall Wall Jump",
     style: controlsStyle,
   });
   const p2Controls = new Text({
-    text: "P2  ←/→ Move  ↑ Jump  ↓ Down  Num1 Light  Num2 Heavy  Num3 Block  Num4 Dash\n↓+Num2 Launcher   Air ↓+Num1 Dive Kick   Dash+Attack Dash Attack",
+    text: "P2  ←/→ Move  ↑ Jump  ↓ Down  |  Num4 HiPunch  Num1 LoPunch  Num5 HiKick  Num2 LoKick  Num6 Block  Num3 Dash\n↓+Punch Uppercut   Air ↓+Kick Dive Kick   Dash+Attack Dash Attack",
     style: new TextStyle({ ...controlsStyleOpts, align: "right" }),
   });
   p1Controls.anchor.set(0, 1);
@@ -327,7 +327,7 @@ async function main() {
   }
 
   function spawnHitEffect(x: number, y: number, blocked: boolean, heavy: boolean, dirX: number, kind: AttackKind) {
-    sound.hit(heavy, blocked);
+    sound.hit(heavy, blocked, isKickKind(kind));
     if (blocked) {
       particles.burst(x, y, WHITE, heavy ? 18 : 10, { speed: 340, spread: Math.PI * 1.2, gravity: 200, size: 4, glow: true });
       particles.streakBurst(x, y, WHITE, heavy ? 6 : 3, { angle: Math.PI * Math.random(), speed: 300, spread: Math.PI, size: 3 });

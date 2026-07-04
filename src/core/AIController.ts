@@ -32,7 +32,7 @@ const PARAMS: Record<AIDifficulty, AIParams> = {
 
 const ATTACK_RANGE = 90;
 
-type PressAction = "jump" | "dash" | "light" | "heavy";
+type PressAction = "jump" | "dash" | "highPunch" | "lowPunch" | "highKick" | "lowKick";
 
 /**
  * Produces an Intent per fixed-timestep frame for a CPU-controlled fighter.
@@ -79,12 +79,18 @@ export class AIController {
     } else if (press === "dash") {
       intent.dash = true;
       intent.dashPressed = true;
-    } else if (press === "light") {
-      intent.light = true;
-      intent.lightPressed = true;
-    } else if (press === "heavy") {
-      intent.heavy = true;
-      intent.heavyPressed = true;
+    } else if (press === "highPunch") {
+      intent.highPunch = true;
+      intent.highPunchPressed = true;
+    } else if (press === "lowPunch") {
+      intent.lowPunch = true;
+      intent.lowPunchPressed = true;
+    } else if (press === "highKick") {
+      intent.highKick = true;
+      intent.highKickPressed = true;
+    } else if (press === "lowKick") {
+      intent.lowKick = true;
+      intent.lowKickPressed = true;
     }
     return intent;
   }
@@ -141,7 +147,7 @@ export class AIController {
       // Dive kick down onto a grounded opponent from above.
       if (p.advancedMoves && !self.grounded && dy > 60 && adx < 160 && Math.random() < 0.5) {
         this.heldFastFall = true;
-        this.pressQueue.push("light");
+        this.pressQueue.push("lowKick");
       }
       return;
     }
@@ -152,16 +158,18 @@ export class AIController {
         // Opponent above: launch them higher or jump after them.
         if (Math.random() < 0.6) {
           this.heldFastFall = true;
-          this.pressQueue.push("heavy"); // launcher
+          this.pressQueue.push("highPunch"); // down+punch uppercut
         } else {
-          this.pressQueue.push("jump", Math.random() < 0.5 ? "light" : "heavy");
+          this.pressQueue.push("jump", Math.random() < 0.5 ? "highPunch" : "highKick");
         }
       } else if (p.advancedMoves && self.grounded && opponent.isStunned && Math.random() < 0.45) {
         // Combo starter on a stunned opponent: launch into juggle.
         this.heldFastFall = true;
-        this.pressQueue.push("heavy");
+        this.pressQueue.push("highPunch");
       } else {
-        this.pressQueue.push(Math.random() < 0.6 ? "light" : "heavy");
+        // Mix up the four normals, favoring quick jabs.
+        const r = Math.random();
+        this.pressQueue.push(r < 0.35 ? "lowPunch" : r < 0.6 ? "highPunch" : r < 0.8 ? "lowKick" : "highKick");
       }
       this.heldMoveX = toward;
     } else {

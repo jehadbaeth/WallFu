@@ -35,7 +35,7 @@ const DIVE_KICK_VX = 480;
 const DIVE_KICK_VY = 1200;
 const DASH_ATTACK_SPEED = 920;
 
-const AERIAL_KINDS: Set<AttackKind> = new Set(["airLight", "airHeavy", "diveKick"]);
+const AERIAL_KINDS: Set<AttackKind> = new Set(["airPunch", "airKick", "diveKick"]);
 
 const WALL_SLIDE_MAX_FALL = 260; // capped fall speed while pressed against a wall
 const WALL_JUMP_VX = 640;
@@ -224,17 +224,28 @@ export class Fighter {
         this.events.push({ type: "dash" });
       }
 
-      if (!this.blocking && (intent.lightPressed || intent.heavyPressed)) {
-        const heavy = intent.heavyPressed;
+      const punchPressed = intent.highPunchPressed || intent.lowPunchPressed;
+      const kickPressed = intent.highKickPressed || intent.lowKickPressed;
+      if (!this.blocking && (punchPressed || kickPressed)) {
         let kind: AttackKind;
         if (this.isDashing) {
           kind = "dashAttack";
         } else if (!this.grounded) {
-          kind = intent.fastFall ? "diveKick" : heavy ? "airHeavy" : "airLight";
-        } else if (intent.fastFall && heavy) {
+          // In the air: punches jab, kicks swing big, down+kick dives.
+          if (kickPressed && intent.fastFall) kind = "diveKick";
+          else if (punchPressed) kind = "airPunch";
+          else kind = "airKick";
+        } else if (punchPressed && intent.fastFall) {
+          // Classic down+punch uppercut.
           kind = "launcher";
+        } else if (intent.highPunchPressed) {
+          kind = "highPunch";
+        } else if (intent.lowPunchPressed) {
+          kind = "lowPunch";
+        } else if (intent.highKickPressed) {
+          kind = "highKick";
         } else {
-          kind = heavy ? "heavy" : "light";
+          kind = "lowKick";
         }
         this.attackKind = kind;
         this.attackPhase = "startup";

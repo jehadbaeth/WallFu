@@ -93,14 +93,17 @@ class SoundEngine {
     this.noiseHit(0.07, { gain: 0.14, filterFreq: 3200 });
   }
 
-  hit(heavy: boolean, blocked: boolean): void {
+  hit(heavy: boolean, blocked: boolean, kick = false): void {
     if (blocked) {
       this.noiseHit(0.08, { gain: 0.22, filterFreq: 2400 });
       this.tone(320, 0.06, { type: "square", gain: 0.1 });
       return;
     }
-    this.noiseHit(heavy ? 0.17 : 0.09, { gain: heavy ? 0.5 : 0.3, filterFreq: heavy ? 450 : 900 });
-    this.tone(heavy ? 90 : 170, heavy ? 0.24 : 0.1, { type: "sine", endFreq: heavy ? 35 : 55, gain: heavy ? 0.42 : 0.2 });
+    // Kicks thud low, punches crack higher.
+    const filterFreq = kick ? (heavy ? 320 : 550) : heavy ? 500 : 1100;
+    const toneFreq = kick ? (heavy ? 70 : 120) : heavy ? 110 : 190;
+    this.noiseHit(heavy ? 0.17 : 0.09, { gain: heavy ? 0.5 : 0.3, filterFreq });
+    this.tone(toneFreq, heavy ? 0.24 : 0.1, { type: "sine", endFreq: heavy ? 35 : 60, gain: heavy ? 0.42 : 0.2 });
   }
 
   wallJump(): void {

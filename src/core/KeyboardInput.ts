@@ -6,19 +6,24 @@ export interface KeyBindings {
   right: string;
   jump: string;
   fastFall: string;
-  light: string;
-  heavy: string;
+  highPunch: string;
+  lowPunch: string;
+  highKick: string;
+  lowKick: string;
   block: string;
   dash: string;
 }
 
+// MK3-style button grid: punches on the top row, kicks below them.
 export const P1_BINDINGS: KeyBindings = {
   left: "KeyA",
   right: "KeyD",
   jump: "KeyW",
   fastFall: "KeyS",
-  light: "KeyF",
-  heavy: "KeyG",
+  highPunch: "KeyF",
+  lowPunch: "KeyV",
+  highKick: "KeyG",
+  lowKick: "KeyB",
   block: "KeyH",
   dash: "KeyJ",
 };
@@ -28,10 +33,12 @@ export const P2_BINDINGS: KeyBindings = {
   right: "ArrowRight",
   jump: "ArrowUp",
   fastFall: "ArrowDown",
-  light: "Numpad1",
-  heavy: "Numpad2",
-  block: "Numpad3",
-  dash: "Numpad4",
+  highPunch: "Numpad4",
+  lowPunch: "Numpad1",
+  highKick: "Numpad5",
+  lowKick: "Numpad2",
+  block: "Numpad6",
+  dash: "Numpad3",
 };
 
 const heldKeys = new Set<string>();
@@ -46,8 +53,10 @@ window.addEventListener("keyup", (e) => {
 export class KeyboardIntentSource {
   private bindings: KeyBindings;
   private prevJump = false;
-  private prevLight = false;
-  private prevHeavy = false;
+  private prevHighPunch = false;
+  private prevLowPunch = false;
+  private prevHighKick = false;
+  private prevLowKick = false;
   private prevDash = false;
 
   constructor(bindings: KeyBindings) {
@@ -69,13 +78,21 @@ export class KeyboardIntentSource {
 
     intent.fastFall = heldKeys.has(b.fastFall);
 
-    intent.light = heldKeys.has(b.light);
-    intent.lightPressed = intent.light && !this.prevLight;
-    this.prevLight = intent.light;
+    intent.highPunch = heldKeys.has(b.highPunch);
+    intent.highPunchPressed = intent.highPunch && !this.prevHighPunch;
+    this.prevHighPunch = intent.highPunch;
 
-    intent.heavy = heldKeys.has(b.heavy);
-    intent.heavyPressed = intent.heavy && !this.prevHeavy;
-    this.prevHeavy = intent.heavy;
+    intent.lowPunch = heldKeys.has(b.lowPunch);
+    intent.lowPunchPressed = intent.lowPunch && !this.prevLowPunch;
+    this.prevLowPunch = intent.lowPunch;
+
+    intent.highKick = heldKeys.has(b.highKick);
+    intent.highKickPressed = intent.highKick && !this.prevHighKick;
+    this.prevHighKick = intent.highKick;
+
+    intent.lowKick = heldKeys.has(b.lowKick);
+    intent.lowKickPressed = intent.lowKick && !this.prevLowKick;
+    this.prevLowKick = intent.lowKick;
 
     intent.block = heldKeys.has(b.block);
 
