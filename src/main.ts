@@ -5,6 +5,7 @@ import { KeyboardIntentSource, P1_BINDINGS, P2_BINDINGS } from "./core/KeyboardI
 import { StickFigureView } from "./render/StickFigure";
 import { ParticleSystem } from "./effects/Particles";
 import { CameraShake } from "./effects/CameraShake";
+import { ShockRingSystem } from "./effects/ShockRing";
 
 const CYAN = 0x2ee6ff;
 const MAGENTA = 0xff2e88;
@@ -48,7 +49,12 @@ async function main() {
   const particles = new ParticleSystem();
   world.addChild(particles.view);
 
+  const shockRings = new ShockRingSystem();
+  world.addChild(shockRings.view);
+
   const shake = new CameraShake();
+  let zoomPunch = 0;
+  let zoomPunchVelocity = 0;
 
   function startX1() {
     return app.screen.width * 0.3;
@@ -122,6 +128,27 @@ async function main() {
   let p2ComboTimer = 0;
   const COMBO_RESET_TIME = 1.1;
 
+  const controlsStyle = new TextStyle({
+    fontFamily: "monospace",
+    fontSize: 15,
+    fontWeight: "700",
+    fill: WHITE,
+    letterSpacing: 0.5,
+  });
+  const p1Controls = new Text({
+    text: "P1  A/D Move  W Jump  S Fast-Fall  F Light  G Heavy  H Block  J Dash",
+    style: controlsStyle,
+  });
+  const p2Controls = new Text({
+    text: "P2  ←/→ Move  ↑ Jump  ↓ Fast-Fall  Num1 Light  Num2 Heavy  Num3 Block  Num4 Dash",
+    style: controlsStyle,
+  });
+  p1Controls.anchor.set(0, 1);
+  p2Controls.anchor.set(1, 1);
+  p1Controls.alpha = 0.65;
+  p2Controls.alpha = 0.65;
+  uiLayer.addChild(p1Controls, p2Controls);
+
   function layoutUI() {
     p1BarBg.position.set(40, 30);
     p1BarFg.position.set(40, 30);
@@ -132,6 +159,8 @@ async function main() {
     koText.position.set(app.screen.width / 2, app.screen.height / 2 - 80);
     p1ComboText.position.set(40, 130);
     p2ComboText.position.set(app.screen.width - 40, 130);
+    p1Controls.position.set(24, app.screen.height - 16);
+    p2Controls.position.set(app.screen.width - 24, app.screen.height - 16);
     flashOverlay.clear();
     flashOverlay.rect(0, 0, app.screen.width, app.screen.height);
     flashOverlay.fill({ color: WHITE, alpha: 1 });
@@ -176,6 +205,42 @@ async function main() {
   let hitstopTimer = 0;
   let koFreezeTimer = 0;
   let koPending: "p1" | "p2" | null = null;
+  let p1RunDustTimer = 0;
+  let p2RunDustTimer = 0;
+  let p1DashStreakTimer = 0;
+  let p2DashStreakTimer = 0;
+
+  function updateRunDust(fighter: Fighter, timer: number, color: number, dt: number): number {
+    const speed = Math.abs(fighter.vx);
+    if (fighter.grounded && speed > 260 && !fighter.isAttacking && !fighter.blocking) {
+      timer -= dt;
+      if (timer <= 0) {
+        timer = 0.09;
+        particles.dustPuff(fighter.x - fighter.facing * 10, fighter.y, color, 3);
+      }
+    } else {
+      timer = 0;
+    }
+    return timer;
+  }
+
+  function updateDashStreaks(fighter: Fighter, timer: number, color: number, dt: number): number {
+    if (fighter.isDashing) {
+      timer -= dt;
+      if (timer <= 0) {
+        timer = 0.03;
+        particles.streakBurst(fighter.x, fighter.y - 40, color, 2, {
+          angle: fighter.dashDirection > 0 ? Math.PI : 0,
+          speed: 400,
+          spread: 0.5,
+          size: 4,
+        });
+      }
+    } else {
+      timer = 0;
+    }
+    return timer;
+  }
 
   function handleMovementEvent(fighter: Fighter, ev: FighterEvent) {
     const color = fighter === player1 ? CYAN : MAGENTA;
@@ -186,32 +251,45 @@ async function main() {
     } else if (ev.type === "jump" || ev.type === "airJump") {
       particles.dustPuff(fighter.x, fighter.y, color, 8);
     } else if (ev.type === "dash") {
-      particles.burst(fighter.x, fighter.y, color, 10, { speed: 200, spread: Math.PI * 0.6, gravity: 100, size: 3 });
-      shake.add(0.08);
+      particles.burst(fighter.x, fighter.y, color, 14, { speed: 220, spread: Math.PI * 0.6, gravity: 100, size: 3, glow: true });
+      particles.streakBurst(fighter.x, fighter.y - 40, color, 8, {
+        angle: fighter.facing > 0 ? Math.PI : 0,
+        speed: 620,
+        spread: 0.7,
+        size: 5,
+      });
+      shake.add(0.1);
     } else if (ev.type === "attackActive") {
       const heavy = ev.kind === "heavy";
       const reach = heavy ? 68 : 58;
       const height = heavy ? 82 : 70;
       const originX = fighter.x + fighter.facing * (18 + reach * 0.6);
       const originY = fighter.y - height * 0.6;
-      particles.burst(originX, originY, color, heavy ? 10 : 6, {
-        speed: heavy ? 60 : 40,
-        spread: 0.5,
+      particles.burst(originX, originY, color, heavy ? 14 : 8, {
+        speed: heavy ? 80 : 50,
+        spread: 0.6,
         gravity: 0,
         size: heavy ? 6 : 4,
+        glow: true,
       });
     }
   }
 
   function spawnHitEffect(x: number, y: number, blocked: boolean, heavy: boolean) {
     if (blocked) {
-      particles.burst(x, y, WHITE, heavy ? 10 : 6, { speed: 320, spread: Math.PI * 1.2, gravity: 200, size: 4 });
+      particles.burst(x, y, WHITE, heavy ? 14 : 8, { speed: 320, spread: Math.PI * 1.2, gravity: 200, size: 4, glow: true });
+      shockRings.spawn(x, y, WHITE, heavy ? 70 : 45, 0.22, 4);
       shake.add(heavy ? 0.18 : 0.08);
     } else {
-      particles.burst(x, y, YELLOW, heavy ? 22 : 14, { speed: heavy ? 520 : 380, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5 });
-      particles.burst(x, y, WHITE, heavy ? 8 : 5, { speed: 200, spread: Math.PI * 2, gravity: 300, size: 3 });
+      particles.burst(x, y, YELLOW, heavy ? 30 : 18, { speed: heavy ? 560 : 400, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5, glow: true });
+      particles.burst(x, y, WHITE, heavy ? 10 : 6, { speed: 220, spread: Math.PI * 2, gravity: 300, size: 3, glow: true });
+      shockRings.spawn(x, y, heavy ? YELLOW : WHITE, heavy ? 130 : 70, heavy ? 0.4 : 0.24, heavy ? 8 : 5);
       shake.add(heavy ? 0.55 : 0.3);
-      if (heavy) screenFlash = 0.35;
+      if (heavy) {
+        screenFlash = 0.35;
+        zoomPunch = 0.06;
+        zoomPunchVelocity = 0;
+      }
     }
   }
 
@@ -220,6 +298,10 @@ async function main() {
     koFreezeTimer = KO_FREEZE_TIME;
     koText.visible = true;
     shake.add(0.4);
+    zoomPunch = 0.12;
+    zoomPunchVelocity = 0;
+    const victim = loser === "p1" ? player1 : player2;
+    shockRings.spawn(victim.x, victim.y - 60, WHITE, 180, 0.5, 10);
   }
 
   function resetRound() {
@@ -266,6 +348,11 @@ async function main() {
         for (const ev of player1.events) handleMovementEvent(player1, ev);
         for (const ev of player2.events) handleMovementEvent(player2, ev);
 
+        p1RunDustTimer = updateRunDust(player1, p1RunDustTimer, CYAN, FIXED_DT);
+        p2RunDustTimer = updateRunDust(player2, p2RunDustTimer, MAGENTA, FIXED_DT);
+        p1DashStreakTimer = updateDashStreaks(player1, p1DashStreakTimer, CYAN, FIXED_DT);
+        p2DashStreakTimer = updateDashStreaks(player2, p2DashStreakTimer, MAGENTA, FIXED_DT);
+
         const hits = resolveCombat(player1, player2);
         for (const hit of hits) {
           spawnHitEffect(hit.x, hit.y, hit.blocked, hit.kind === "heavy");
@@ -306,12 +393,22 @@ async function main() {
     player1View.update(player1, frameDt);
     player2View.update(player2, frameDt);
     particles.update(frameDt);
+    shockRings.update(frameDt);
 
     drawHealthBar(p1BarBg, p1BarFg, player1.health, player1.maxHealth, CYAN, false);
     drawHealthBar(p2BarBg, p2BarFg, player2.health, player2.maxHealth, MAGENTA, true);
 
+    const zoomAccel = -zoomPunch * 220 - zoomPunchVelocity * 18;
+    zoomPunchVelocity += zoomAccel * frameDt;
+    zoomPunch += zoomPunchVelocity * frameDt;
+
     const offset = shake.update(frameDt);
-    world.position.set(offset.x, offset.y);
+    const scale = 1 + zoomPunch;
+    world.scale.set(scale);
+    world.position.set(
+      offset.x + (app.screen.width / 2) * (1 - scale),
+      offset.y + (app.screen.height / 2) * (1 - scale),
+    );
   });
 }
 
