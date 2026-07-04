@@ -26,59 +26,65 @@ export interface AttackData {
   bottomOffset?: number;
 }
 
+// Each move has a distinct job:
+//   lowPunch   - fastest poke, tiny knockback, chains into everything
+//   highPunch  - stagger setup: long hitstun, short knockback, starts combos
+//   lowKick    - ankle sweep: trips them straight UP for juggles
+//   highKick   - Liu Kang special: flying fire kick that sends them ACROSS the arena
+//   airPunch   - quick air poke that keeps them close
+//   airKick    - MK jump kick: diagonal knock-away
+//   diveKick   - spikes the opponent DOWN
+//   launcher   - uppercut: straight up, the juggle starter
+//   dashAttack - shoulder rush: carries both fighters forward
 export const ATTACKS: Record<AttackKind, AttackData> = {
-  // Fast jab: lowest commitment, chains into itself.
   lowPunch: {
     startup: 0.04,
     active: 0.06,
     recovery: 0.08,
     damage: 4,
-    knockback: 260,
-    upKnockback: 60,
-    hitstun: 0.18,
+    knockback: 230,
+    upKnockback: 40,
+    hitstun: 0.2,
     range: 52,
     height: 74,
     hitstop: 0.03,
   },
-  // Straight punch to the head: solid damage and pushback.
   highPunch: {
     startup: 0.07,
     active: 0.08,
     recovery: 0.12,
     damage: 8,
-    knockback: 440,
-    upKnockback: 160,
-    hitstun: 0.24,
+    knockback: 290,
+    upKnockback: 80,
+    hitstun: 0.36,
     range: 62,
     height: 92,
-    hitstop: 0.045,
+    hitstop: 0.05,
   },
-  // Sweep at the ankles: hits low and pops the opponent up a bit.
   lowKick: {
     startup: 0.08,
     active: 0.09,
     recovery: 0.16,
     damage: 7,
-    knockback: 360,
-    upKnockback: 260,
-    hitstun: 0.3,
+    knockback: 170,
+    upKnockback: 470,
+    hitstun: 0.44,
     range: 68,
     height: 42,
     hitstop: 0.05,
     bottomOffset: 0,
   },
-  // Head-height roundhouse: the big ground hit, whiffs low.
   highKick: {
-    startup: 0.11,
+    startup: 0.12,
     active: 0.1,
-    recovery: 0.2,
+    recovery: 0.24,
     damage: 13,
-    knockback: 680,
-    upKnockback: 340,
-    hitstun: 0.36,
-    range: 80,
+    knockback: 960,
+    upKnockback: 240,
+    hitstun: 0.55,
+    range: 84,
     height: 120,
-    hitstop: 0.075,
+    hitstop: 0.09,
     bottomOffset: -48,
   },
   airPunch: {
@@ -86,9 +92,9 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     active: 0.1,
     recovery: 0.08,
     damage: 6,
-    knockback: 340,
-    upKnockback: 220,
-    hitstun: 0.22,
+    knockback: 300,
+    upKnockback: 200,
+    hitstun: 0.24,
     range: 56,
     height: 80,
     hitstop: 0.03,
@@ -99,9 +105,9 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     active: 0.12,
     recovery: 0.16,
     damage: 11,
-    knockback: 560,
-    upKnockback: 400,
-    hitstun: 0.34,
+    knockback: 640,
+    upKnockback: 300,
+    hitstun: 0.36,
     range: 68,
     height: 90,
     hitstop: 0.065,
@@ -112,9 +118,9 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     active: 0.35,
     recovery: 0.12,
     damage: 10,
-    knockback: 420,
-    upKnockback: 160,
-    hitstun: 0.3,
+    knockback: 380,
+    upKnockback: -380,
+    hitstun: 0.34,
     range: 48,
     height: 58,
     hitstop: 0.06,
@@ -125,8 +131,8 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     active: 0.09,
     recovery: 0.26,
     damage: 11,
-    knockback: 140,
-    upKnockback: 800,
+    knockback: 120,
+    upKnockback: 820,
     hitstun: 0.5,
     range: 54,
     height: 100,
@@ -137,8 +143,8 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     active: 0.12,
     recovery: 0.16,
     damage: 9,
-    knockback: 540,
-    upKnockback: 220,
+    knockback: 600,
+    upKnockback: 180,
     hitstun: 0.3,
     range: 62,
     height: 74,

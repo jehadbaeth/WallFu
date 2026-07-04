@@ -50,10 +50,15 @@ export class StickFigureView {
   private stretchY = 1;
   private stretchYVelocity = 0;
 
+  private tumble = 0; // spin while flying from a big hit
+
   constructor(color: number) {
     this.color = color;
     this.view.addChild(this.ghostLayer);
     this.view.addChild(this.body);
+    // Rotate the body around the torso center so tumbling reads naturally.
+    this.body.pivot.set(0, -70);
+    this.body.position.set(0, -70);
   }
 
   update(fighter: Fighter, dt: number): void {
@@ -128,6 +133,16 @@ export class StickFigureView {
     } else if (fighter.grounded) {
       this.runPhase += dt * 2; // idle sway
     }
+
+    // Tumble while flying from a heavy hit; spring upright otherwise.
+    const flySpeed = Math.hypot(fighter.vx, fighter.vy);
+    if (fighter.isStunned && !fighter.grounded && flySpeed > 650) {
+      this.tumble += dt * 13 * Math.sign(fighter.vx || 1);
+    } else {
+      this.tumble *= Math.max(0, 1 - dt * 12);
+      if (Math.abs(this.tumble) < 0.02) this.tumble = 0;
+    }
+    this.body.rotation = this.tumble;
 
     // Dash afterimage trail.
     if (fighter.isDashing) {

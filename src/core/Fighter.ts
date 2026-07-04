@@ -39,11 +39,12 @@ const AIR_KICK_VX = 420;
 const AIR_KICK_VY = 360;
 
 // Ground attacks step into the opponent when they go active (One Finger Death Punch lunge).
+// The high kick flies forward like a Liu Kang flying kick.
 const LUNGE_SPEED: Partial<Record<AttackKind, number>> = {
   lowPunch: 180,
   highPunch: 300,
   lowKick: 240,
-  highKick: 360,
+  highKick: 560,
 };
 
 const AERIAL_KINDS: Set<AttackKind> = new Set(["airPunch", "airKick", "diveKick"]);
