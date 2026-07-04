@@ -80,30 +80,46 @@ class SoundEngine {
     src.stop(now + duration + 0.02);
   }
 
+  /** Small random pitch variance so repeated sounds never feel machine-gun identical. */
+  private vary(freq: number, amount = 0.12): number {
+    return freq * (1 + (Math.random() * 2 - 1) * amount);
+  }
+
   jump(): void {
-    this.tone(420, 0.11, { type: "square", endFreq: 760, gain: 0.16 });
+    this.tone(this.vary(420), 0.11, { type: "square", endFreq: 760, gain: 0.14 });
+    this.tone(this.vary(840), 0.07, { type: "sine", endFreq: 1200, gain: 0.06 });
   }
 
   land(strength: number): void {
-    this.noiseHit(0.07 + strength * 0.05, { gain: 0.18 + strength * 0.22, filterFreq: 220 });
+    this.noiseHit(0.07 + strength * 0.05, { gain: 0.18 + strength * 0.22, filterFreq: this.vary(220) });
+    if (strength > 0.4) this.tone(this.vary(70), 0.12, { type: "sine", endFreq: 40, gain: 0.2 });
   }
 
   dash(): void {
-    this.tone(220, 0.13, { type: "sawtooth", endFreq: 60, gain: 0.14 });
-    this.noiseHit(0.07, { gain: 0.14, filterFreq: 3200 });
+    this.tone(this.vary(220), 0.13, { type: "sawtooth", endFreq: 60, gain: 0.12 });
+    this.noiseHit(0.09, { gain: 0.12, filterFreq: this.vary(3000), type: "highpass" });
   }
 
   hit(heavy: boolean, blocked: boolean, kick = false): void {
     if (blocked) {
-      this.noiseHit(0.08, { gain: 0.22, filterFreq: 2400 });
-      this.tone(320, 0.06, { type: "square", gain: 0.1 });
+      this.noiseHit(0.08, { gain: 0.22, filterFreq: this.vary(2400) });
+      this.tone(this.vary(320), 0.06, { type: "square", gain: 0.1 });
       return;
     }
-    // Kicks thud low, punches crack higher.
-    const filterFreq = kick ? (heavy ? 320 : 550) : heavy ? 500 : 1100;
-    const toneFreq = kick ? (heavy ? 70 : 120) : heavy ? 110 : 190;
-    this.noiseHit(heavy ? 0.17 : 0.09, { gain: heavy ? 0.5 : 0.3, filterFreq });
-    this.tone(toneFreq, heavy ? 0.24 : 0.1, { type: "sine", endFreq: heavy ? 35 : 60, gain: heavy ? 0.42 : 0.2 });
+    // Three layers: sub thump for weight, mid crack for texture, high snap transient.
+    const sub = kick ? (heavy ? 62 : 95) : heavy ? 85 : 130;
+    const crack = kick ? (heavy ? 300 : 520) : heavy ? 480 : 1000;
+    this.tone(this.vary(sub), heavy ? 0.26 : 0.12, { type: "sine", endFreq: 32, gain: heavy ? 0.5 : 0.26 });
+    this.noiseHit(heavy ? 0.16 : 0.08, { gain: heavy ? 0.42 : 0.26, filterFreq: this.vary(crack) });
+    this.noiseHit(0.03, { gain: heavy ? 0.3 : 0.2, filterFreq: this.vary(4500), type: "highpass" });
+  }
+
+  /** Rising two-tone stinger for announcements (FIGHT!, FIRST BLOOD, ...). */
+  announce(excitement = 1): void {
+    const base = this.vary(340, 0.05) * (0.9 + excitement * 0.15);
+    this.tone(base, 0.14, { type: "square", endFreq: base * 1.5, gain: 0.16 });
+    this.tone(base * 1.5, 0.22, { type: "square", endFreq: base * 2.2, gain: 0.14, attack: 0.03 });
+    this.noiseHit(0.12, { gain: 0.1, filterFreq: 1800 });
   }
 
   whoosh(big: boolean): void {
