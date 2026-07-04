@@ -2,6 +2,7 @@ import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
 import { Fighter, type FighterEvent } from "./core/Fighter";
 import { resolveCombat } from "./core/Combat";
 import { KeyboardIntentSource, P1_BINDINGS, P2_BINDINGS } from "./core/KeyboardInput";
+import { GamepadIntentSource, mergeIntents } from "./core/GamepadInput";
 import { StickFigureView } from "./render/StickFigure";
 import { ParticleSystem } from "./effects/Particles";
 import { CameraShake } from "./effects/CameraShake";
@@ -77,6 +78,8 @@ async function main() {
 
   const player1Input = new KeyboardIntentSource(P1_BINDINGS);
   const player2Input = new KeyboardIntentSource(P2_BINDINGS);
+  const player1Gamepad = new GamepadIntentSource(0);
+  const player2Gamepad = new GamepadIntentSource(1);
 
   const player1View = new StickFigureView(CYAN);
   const player2View = new StickFigureView(MAGENTA);
@@ -534,8 +537,8 @@ async function main() {
       let accumulator = frameDt;
 
       while (accumulator >= FIXED_DT) {
-        const intent1 = player1Input.poll();
-        const intent2 = player2Input.poll();
+        const intent1 = mergeIntents(player1Input.poll(), player1Gamepad.poll());
+        const intent2 = mergeIntents(player2Input.poll(), player2Gamepad.poll());
         player1.update(FIXED_DT, intent1, currentMap);
         player2.update(FIXED_DT, intent2, currentMap);
 
