@@ -146,6 +146,38 @@ export class Fighter {
     }
   }
 
+  private tryStartAttack(intent: Intent): void {
+    const punchPressed = intent.highPunchPressed || intent.lowPunchPressed;
+    const kickPressed = intent.highKickPressed || intent.lowKickPressed;
+    if (!punchPressed && !kickPressed) return;
+    let kind: AttackKind;
+    if (this.isDashing) {
+      kind = "dashAttack";
+    } else if (!this.grounded) {
+      // In the air: punches jab, kicks swing big, down+kick dives.
+      if (kickPressed && intent.fastFall) kind = "diveKick";
+      else if (punchPressed) kind = "airPunch";
+      else kind = "airKick";
+    } else if (punchPressed && intent.fastFall) {
+      // Classic down+punch uppercut.
+      kind = "launcher";
+    } else if (intent.highPunchPressed) {
+      kind = "highPunch";
+    } else if (intent.lowPunchPressed) {
+      kind = "lowPunch";
+    } else if (intent.highKickPressed) {
+      kind = "highKick";
+    } else {
+      kind = "lowKick";
+    }
+    this.attackKind = kind;
+    this.attackPhase = "startup";
+    this.attackTimer = ATTACKS[kind].startup;
+    this.attackHasHit = false;
+    this.dashTimer = 0;
+    this.events.push({ type: "attackStart", kind });
+  }
+
   update(dt: number, intent: Intent, map: MapData): void {
     this.events.length = 0;
     const worldMinX = 0;
@@ -235,6 +267,11 @@ export class Fighter {
         this.vx = moveToward(this.vx, 0, GROUND_FRICTION * 0.6 * dt);
       }
       this.blocking = false;
+
+      // Hit-confirm chaining: after connecting, recovery cancels into the next attack.
+      if (this.attackPhase === "recovery" && this.attackHasHit) {
+        this.tryStartAttack(intent);
+      }
     } else {
       this.blocking = this.grounded && intent.block;
 
@@ -245,36 +282,7 @@ export class Fighter {
         this.events.push({ type: "dash" });
       }
 
-      const punchPressed = intent.highPunchPressed || intent.lowPunchPressed;
-      const kickPressed = intent.highKickPressed || intent.lowKickPressed;
-      if (!this.blocking && (punchPressed || kickPressed)) {
-        let kind: AttackKind;
-        if (this.isDashing) {
-          kind = "dashAttack";
-        } else if (!this.grounded) {
-          // In the air: punches jab, kicks swing big, down+kick dives.
-          if (kickPressed && intent.fastFall) kind = "diveKick";
-          else if (punchPressed) kind = "airPunch";
-          else kind = "airKick";
-        } else if (punchPressed && intent.fastFall) {
-          // Classic down+punch uppercut.
-          kind = "launcher";
-        } else if (intent.highPunchPressed) {
-          kind = "highPunch";
-        } else if (intent.lowPunchPressed) {
-          kind = "lowPunch";
-        } else if (intent.highKickPressed) {
-          kind = "highKick";
-        } else {
-          kind = "lowKick";
-        }
-        this.attackKind = kind;
-        this.attackPhase = "startup";
-        this.attackTimer = ATTACKS[kind].startup;
-        this.attackHasHit = false;
-        this.dashTimer = 0;
-        this.events.push({ type: "attackStart", kind });
-      }
+      if (!this.blocking) this.tryStartAttack(intent);
     }
 
     if (this.isDashing) {
