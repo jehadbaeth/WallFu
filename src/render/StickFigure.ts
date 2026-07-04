@@ -34,6 +34,7 @@ export class StickFigureView {
   private tumble = 0; // spin while flying from a big hit
   private pose: Pose | null = null; // blended display pose
   private attackVariant = 0; // rerolled each strike so repeats look different
+  private punchHand = false; // alternates which arm throws consecutive punches
 
   constructor(color: number) {
     this.color = color;
@@ -73,6 +74,10 @@ export class StickFigureView {
     for (const ev of fighter.events) {
       if (ev.type === "attackStart") {
         this.attackVariant = Math.floor(Math.random() * 16);
+        // Consecutive punches alternate hands.
+        if (ev.kind === "lowPunch" || ev.kind === "highPunch" || ev.kind === "airPunch" || ev.kind === "launcher") {
+          this.punchHand = !this.punchHand;
+        }
       } else if (ev.type === "jump") {
         this.squash = 1.35;
         this.squashVelocity = 0;
@@ -151,7 +156,7 @@ export class StickFigureView {
 
     for (const g of this.ghosts) {
       const gg = new Graphics();
-      const ghostPose = buildPose(g.phase, false, 0, 1, g.facing, null, false, false, 0, 0);
+      const ghostPose = buildPose(g.phase, true, 0, g.facing, null, false, false, 0, 0);
       drawSkeleton(gg, ghostPose, g.facing, this.color, g.alpha, true);
       gg.position.set(g.x - x, g.y - y);
       this.ghostLayer.addChild(gg);
@@ -175,7 +180,6 @@ export class StickFigureView {
       this.runPhase,
       running,
       fighter.vy,
-      this.squash,
       fighter.facing,
       fighter.isAttacking ? fighter.attackKind : null,
       fighter.blocking,
@@ -185,6 +189,16 @@ export class StickFigureView {
       wallSliding,
       this.attackVariant,
     );
+    // Alternate punching hands: swap arm targets so the other fist fires while
+    // the first returns to guard.
+    if (this.punchHand) {
+      const hand = target.frontHand;
+      target.frontHand = target.backHand;
+      target.backHand = hand;
+      const side = target.frontElbowSide;
+      target.frontElbowSide = target.backElbowSide;
+      target.backElbowSide = side;
+    }
     // Blend toward the target pose so limbs flow between states instead of teleporting.
     // Strikes blend fast to keep the chamber/snap punch.
     const rate = fighter.attackPhase === "active" ? 55 : fighter.isAttacking || fighter.isDashing ? 34 : 16;
@@ -195,7 +209,9 @@ export class StickFigureView {
     drawSkeleton(this.body, this.pose, fighter.facing, drawColor, 1, false);
 
     this.view.position.set(x, y);
-    this.view.scale.set(this.stretchX, this.stretchY);
+    // Squash/stretch composes with the dash stretch springs.
+    const squash = Math.max(0.4, this.squash);
+    this.view.scale.set(this.stretchX / Math.sqrt(squash), this.stretchY * squash);
   }
 }
 

@@ -1,19 +1,30 @@
 import type { AttackKind } from "../core/Combat";
 
-// Pure stick-figure pose math, kept free of rendering imports so poses can be
-// previewed and tested outside the browser.
+// Stick-figure pose model, rebuilt around inverse kinematics: poses declare
+// WHERE hands and feet should be, and elbows/knees solve themselves. Kept free
+// of rendering imports so poses can be previewed and tested outside the browser.
+//
+// Conventions (before mirroring by facing):
+//  - Local space origin at the feet, y negative = up, x positive = forward.
+//  - Foot targets are absolute in local space (ground is y=0).
+//  - Hand targets are relative to the SHOULDER, so guards track the torso.
+
+export interface Pt {
+  x: number;
+  y: number;
+}
 
 export interface Pose {
-  frontLegSwing: number; // positive = forward
-  backLegSwing: number;
-  frontLegBend: number; // 0 = straight, 1 = fully folded
-  backLegBend: number;
-  frontArmSwing: number; // positive = forward reach
-  backArmSwing: number;
-  torsoLean: number; // radians of actual torso pitch; positive = head dips toward facing
+  torsoPitch: number; // radians; positive = head dips toward facing
   crouch: number; // 0..1, lowers hip
-  scaleX: number;
-  scaleY: number;
+  frontHand: Pt; // relative to shoulder
+  backHand: Pt;
+  frontFoot: Pt; // absolute local space
+  backFoot: Pt;
+  frontElbowSide: 1 | -1; // which side of the shoulder->hand line the elbow pops out
+  backElbowSide: 1 | -1;
+  frontKneeSide: 1 | -1;
+  backKneeSide: 1 | -1;
 }
 
 export const HEAD_R = 16;
@@ -22,76 +33,95 @@ export const THIGH_LEN = 30;
 export const SHIN_LEN = 28;
 export const UPPER_ARM_LEN = 24;
 export const FOREARM_LEN = 24;
+const LEG_LEN = THIGH_LEN + SHIN_LEN;
 
-export interface AttackPoseConfig {
-  lean: number;
-  leanGain: number;
-  armBase: number;
-  armReach: number;
-  backArm: number;
-  frontLeg: number;
-  frontLegBend: number;
-  backLeg: number;
-  backLegBend: number;
-  crouch: number;
+// Boxer guard: fists chambered by the chin (relative to shoulder).
+const GUARD_FRONT: Pt = { x: 17, y: -7 };
+const GUARD_BACK: Pt = { x: 11, y: -3 };
+// Striking hand fully chambered before the punch fires.
+const CHAMBER_HAND: Pt = { x: 8, y: -2 };
+// Kick chamber: knee up, foot cocked near the standing knee.
+const CHAMBER_FOOT: Pt = { x: 22, y: -34 };
+
+function pt(x: number, y: number): Pt {
+  return { x, y };
 }
 
-// Positive swings reach forward (toward facing). torsoLean is real pitch now:
-// 1.0 rad drops the head near hip height.
+export interface AttackPoseConfig {
+  pitch: number; // torso pitch at full extension
+  pitchGain: number; // extra pitch as ext goes 0->1
+  crouch: number;
+  kick: boolean; // striking limb: front foot (kick) or front hand (punch)
+  strike: Pt; // strike target at full extension (hand: rel shoulder; foot: absolute)
+  offHand: Pt; // non-striking hand, rel shoulder
+  stanceFront: Pt; // absolute feet; for kicks stanceFront is ignored (foot strikes)
+  stanceBack: Pt;
+  elbowSide?: 1 | -1;
+  kneeSide?: 1 | -1;
+}
+
 // Every attack has multiple pose variants, picked randomly per strike so
 // repeated hits never look identical (One Finger Death Punch style).
 export const ATTACK_POSES: Record<AttackKind, AttackPoseConfig[]> = {
   lowPunch: [
-    // Straight jab off a lunge.
-    { lean: 0.2, leanGain: 0.08, armBase: 0.4, armReach: 1.2, backArm: -0.5, frontLeg: 0.55, frontLegBend: 0.3, backLeg: -0.7, backLegBend: 0.05, crouch: 0.1 },
-    // Rising backfist, more upright.
-    { lean: 0.08, leanGain: 0.08, armBase: 0.9, armReach: 1.1, backArm: -0.3, frontLeg: 0.35, frontLegBend: 0.2, backLeg: -0.45, backLegBend: 0.1, crouch: 0.06 },
-    // Short body hook from a crouch.
-    { lean: 0.36, leanGain: 0.08, armBase: 0.2, armReach: 1.0, backArm: -0.6, frontLeg: 0.6, frontLegBend: 0.4, backLeg: -0.55, backLegBend: 0.08, crouch: 0.2 },
+    // Straight jab from the chin, fist ends at chin height.
+    { pitch: 0.18, pitchGain: 0.08, crouch: 0.1, kick: false, strike: pt(56, -4), offHand: GUARD_FRONT, stanceFront: pt(26, 0), stanceBack: pt(-24, 0) },
+    // Backfist snapping up beside the head.
+    { pitch: 0.06, pitchGain: 0.06, crouch: 0.06, kick: false, strike: pt(46, -26), offHand: GUARD_FRONT, stanceFront: pt(18, 0), stanceBack: pt(-18, 0) },
+    // Body hook: elbow stays flared through the arc.
+    { pitch: 0.3, pitchGain: 0.08, crouch: 0.18, kick: false, strike: pt(42, 10), offHand: GUARD_FRONT, stanceFront: pt(24, 0), stanceBack: pt(-22, 0), elbowSide: -1 },
   ],
   highPunch: [
-    // Long cross, full commitment.
-    { lean: 0.3, leanGain: 0.12, armBase: 0.4, armReach: 1.7, backArm: -0.7, frontLeg: 0.7, frontLegBend: 0.35, backLeg: -0.85, backLegBend: 0.05, crouch: 0.12 },
-    // Overhead hammer blow arcing down.
-    { lean: 0.42, leanGain: 0.1, armBase: 2.3, armReach: -0.9, backArm: -0.8, frontLeg: 0.55, frontLegBend: 0.3, backLeg: -0.7, backLegBend: 0.06, crouch: 0.14 },
-    // Rising uppercut-style straight.
-    { lean: 0.12, leanGain: 0.1, armBase: 0.6, armReach: 1.6, backArm: -0.5, frontLeg: 0.4, frontLegBend: 0.25, backLeg: -0.75, backLegBend: 0.05, crouch: 0.18 },
+    // Long cross off a deep lunge.
+    { pitch: 0.3, pitchGain: 0.12, crouch: 0.12, kick: false, strike: pt(62, -6), offHand: GUARD_FRONT, stanceFront: pt(34, 0), stanceBack: pt(-34, 0) },
+    // Overhand looping down onto the head.
+    { pitch: 0.42, pitchGain: 0.1, crouch: 0.14, kick: false, strike: pt(52, -24), offHand: GUARD_FRONT, stanceFront: pt(30, 0), stanceBack: pt(-30, 0), elbowSide: -1 },
+    // Rising straight to the jaw.
+    { pitch: 0.1, pitchGain: 0.08, crouch: 0.16, kick: false, strike: pt(54, -18), offHand: GUARD_FRONT, stanceFront: pt(24, 0), stanceBack: pt(-30, 0) },
   ],
   lowKick: [
     // Deep crouch sweep along the ground.
-    { lean: 0.55, leanGain: 0.1, armBase: -0.3, armReach: -0.3, backArm: -0.5, frontLeg: 1.15, frontLegBend: 0.05, backLeg: -0.3, backLegBend: 0.55, crouch: 0.45 },
-    // Snapping shin kick, more upright.
-    { lean: 0.3, leanGain: 0.1, armBase: -0.2, armReach: -0.2, backArm: -0.6, frontLeg: 0.95, frontLegBend: 0.22, backLeg: -0.25, backLegBend: 0.3, crouch: 0.25 },
-    // Dropped spinning sweep, very low.
-    { lean: 0.75, leanGain: 0.08, armBase: -0.5, armReach: -0.3, backArm: -0.8, frontLeg: 1.3, frontLegBend: 0.03, backLeg: -0.35, backLegBend: 0.7, crouch: 0.6 },
+    { pitch: 0.5, pitchGain: 0.1, crouch: 0.42, kick: true, strike: pt(66, -4), offHand: pt(-14, 8), stanceFront: pt(0, 0), stanceBack: pt(-20, 0) },
+    // Snapping shin kick, guard kept up.
+    { pitch: 0.26, pitchGain: 0.08, crouch: 0.22, kick: true, strike: pt(56, -22), offHand: GUARD_FRONT, stanceFront: pt(0, 0), stanceBack: pt(-16, 0) },
+    // Dropped sweep, body low and long.
+    { pitch: 0.72, pitchGain: 0.08, crouch: 0.58, kick: true, strike: pt(72, -2), offHand: pt(-20, 12), stanceFront: pt(0, 0), stanceBack: pt(-26, 0) },
   ],
-  // Liu Kang high kick: torso tips AWAY from the kick so the head ducks low
-  // while the straight leg swings up in front, foot above the head.
+  // Liu Kang high kick: torso tips away so the head ducks low while the
+  // straight leg swings up in front, foot above the head.
   highKick: [
-    { lean: -1.15, leanGain: -0.05, armBase: -0.9, armReach: -0.3, backArm: -1.3, frontLeg: 3.0, frontLegBend: 0.03, backLeg: 0.0, backLegBend: 0.03, crouch: 0.08 },
+    { pitch: -1.15, pitchGain: -0.05, crouch: 0.08, kick: true, strike: pt(16, -112), offHand: pt(-16, 14), stanceFront: pt(0, 0), stanceBack: pt(-4, 0), kneeSide: -1 },
   ],
   airPunch: [
-    { lean: 0.14, leanGain: 0.1, armBase: 0.4, armReach: 1.5, backArm: 0.4, frontLeg: 0.3, frontLegBend: 0.5, backLeg: -0.2, backLegBend: 0.6, crouch: 0 },
-    { lean: 0.3, leanGain: 0.1, armBase: 2.1, armReach: -0.8, backArm: -0.4, frontLeg: 0.25, frontLegBend: 0.6, backLeg: -0.25, backLegBend: 0.7, crouch: 0 },
+    { pitch: 0.14, pitchGain: 0.08, crouch: 0, kick: false, strike: pt(54, -2), offHand: GUARD_FRONT, stanceFront: pt(16, -28), stanceBack: pt(-12, -22) },
+    { pitch: 0.3, pitchGain: 0.08, crouch: 0, kick: false, strike: pt(48, -24), offHand: GUARD_FRONT, stanceFront: pt(14, -30), stanceBack: pt(-14, -24), elbowSide: -1 },
   ],
-  // MK jump kick: leg thrust diagonally down-forward along the falling arc, other leg tucked.
-  airKick: [{ lean: 0.25, leanGain: 0.1, armBase: -0.3, armReach: -0.3, backArm: -0.5, frontLeg: 1.25, frontLegBend: 0.05, backLeg: -0.2, backLegBend: 0.75, crouch: 0 }],
-  diveKick: [{ lean: 0.6, leanGain: 0.1, armBase: -0.7, armReach: -0.3, backArm: -0.9, frontLeg: 0.85, frontLegBend: 0.05, backLeg: 0.6, backLegBend: 0.1, crouch: 0 }],
-  launcher: [{ lean: -0.3, leanGain: -0.12, armBase: 0.8, armReach: 1.4, backArm: -0.4, frontLeg: 0.2, frontLegBend: 0.3, backLeg: -0.2, backLegBend: 0.35, crouch: 0.25 }],
-  // Shoulder rush: low, long, head-first lunge.
-  dashAttack: [{ lean: 0.55, leanGain: 0.1, armBase: 0.5, armReach: 1.6, backArm: -0.7, frontLeg: 0.8, frontLegBend: 0.35, backLeg: -0.9, backLegBend: 0.05, crouch: 0.2 }],
+  // MK jump kick: leg thrust diagonally down-forward, other leg tucked.
+  airKick: [
+    { pitch: 0.24, pitchGain: 0.08, crouch: 0, kick: true, strike: pt(50, -18), offHand: pt(-12, 6), stanceFront: pt(0, 0), stanceBack: pt(-14, -30) },
+  ],
+  // Dive kick: body pitched into the plunge, both legs trailing into the strike.
+  diveKick: [
+    { pitch: 0.6, pitchGain: 0.08, crouch: 0, kick: true, strike: pt(40, 6), offHand: pt(-18, 4), stanceFront: pt(0, 0), stanceBack: pt(-26, -20) },
+  ],
+  // Uppercut: fist rips upward, elbow staying low, torso arched back.
+  launcher: [
+    { pitch: -0.3, pitchGain: -0.1, crouch: 0.22, kick: false, strike: pt(30, -34), offHand: GUARD_FRONT, stanceFront: pt(18, 0), stanceBack: pt(-20, 0), elbowSide: -1 },
+  ],
+  // Shoulder rush: low head-first lunge, lead fist driving.
+  dashAttack: [
+    { pitch: 0.55, pitchGain: 0.08, crouch: 0.2, kick: false, strike: pt(50, 4), offHand: pt(-16, 8), stanceFront: pt(34, 0), stanceBack: pt(-34, 0) },
+  ],
 };
 
-/** Configs whose front leg is the striking limb. */
-export function isKickPose(cfg: AttackPoseConfig): boolean {
-  return cfg.frontLeg > 0.7;
+function lerpPt(a: Pt, b: Pt, t: number): Pt {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
 export function buildPose(
   phase: number,
   running: boolean,
   vy: number,
-  squash: number,
   _facing: 1 | -1,
   attackKind: AttackKind | null,
   blocking: boolean,
@@ -101,150 +131,127 @@ export function buildPose(
   wallSliding = false,
   attackVariant = 0,
 ): Pose {
-  let frontLegSwing = 0;
-  let backLegSwing = 0;
-  let frontLegBend = 0;
-  let backLegBend = 0;
-  let torsoLean = 0;
-  let frontArmSwing = 0;
-  let backArmSwing = 0;
-  let crouch = 0;
+  const pose: Pose = {
+    torsoPitch: 0.12,
+    crouch: 0.08,
+    frontHand: GUARD_FRONT,
+    backHand: GUARD_BACK,
+    frontFoot: pt(16, 0),
+    backFoot: pt(-16, 0),
+    frontElbowSide: 1,
+    backElbowSide: 1,
+    frontKneeSide: 1,
+    backKneeSide: 1,
+  };
 
   if (stunned) {
-    torsoLean = -0.35;
-    frontArmSwing = -0.5;
-    backArmSwing = -0.8;
-    frontLegBend = 0.25;
-    backLegBend = 0.25;
-    frontLegSwing = 0.3;
-    backLegSwing = -0.2;
+    pose.torsoPitch = -0.35;
+    pose.frontHand = pt(-12, 8);
+    pose.backHand = pt(-18, 14);
+    pose.frontFoot = pt(20, -8);
+    pose.backFoot = pt(-14, -4);
+    pose.crouch = 0.12;
   } else if (attackKind) {
     const variants = ATTACK_POSES[attackKind];
     const cfg = variants[Math.abs(attackVariant) % variants.length];
-    const ext = attackProgress; // negative = chambered, 1 = full snap
-    const kick = isKickPose(cfg);
+    const ext = attackProgress; // negative = chambered wind-up, 1 = full snap
+    pose.crouch = cfg.crouch;
+    if (cfg.elbowSide) pose.frontElbowSide = cfg.elbowSide;
+    if (cfg.kneeSide) pose.frontKneeSide = cfg.kneeSide;
     if (ext < 0) {
-      // Wind-up: coil the body and chamber the striking limb before the snap.
+      // Wind-up: coil back and chamber the striking limb.
       const w = Math.min(-ext / 0.45, 1);
-      torsoLean = -0.15 * w;
-      crouch = cfg.crouch + 0.12 * w;
-      if (kick) {
-        frontLegSwing = 0.45 * w;
-        frontLegBend = 0.9 * w; // knee raised, ready to fire
-        backLegSwing = cfg.backLeg;
-        backLegBend = cfg.backLegBend;
-        frontArmSwing = 0.5;
-        backArmSwing = 0.3;
-      } else {
-        frontArmSwing = cfg.armBase - 0.9 * w; // fist drawn back
-        backArmSwing = 0.4;
-        frontLegSwing = cfg.frontLeg * 0.4;
-        backLegSwing = cfg.backLeg;
-        frontLegBend = cfg.frontLegBend;
-        backLegBend = cfg.backLegBend;
-      }
+      pose.torsoPitch = -0.15 * w;
+      pose.crouch = cfg.crouch + 0.12 * w;
+      pose.frontHand = cfg.kick ? GUARD_FRONT : lerpPt(GUARD_FRONT, CHAMBER_HAND, w);
+      pose.backHand = GUARD_BACK;
+      pose.frontFoot = cfg.kick ? lerpPt(pt(16, 0), CHAMBER_FOOT, w) : cfg.stanceFront;
+      pose.backFoot = cfg.stanceBack;
     } else {
-      torsoLean = cfg.lean + ext * cfg.leanGain;
-      frontArmSwing = cfg.armBase + cfg.armReach * ext;
-      backArmSwing = cfg.backArm;
-      frontLegSwing = kick ? cfg.frontLeg * ext : cfg.frontLeg;
-      backLegSwing = cfg.backLeg;
-      frontLegBend = kick ? cfg.frontLegBend + (1 - ext) * 0.4 : cfg.frontLegBend;
-      backLegBend = cfg.backLegBend;
-      crouch = cfg.crouch;
+      const e = Math.min(ext, 1);
+      pose.torsoPitch = cfg.pitch + cfg.pitchGain * e;
+      if (cfg.kick) {
+        // Foot travels chamber -> strike target.
+        pose.frontFoot = lerpPt(CHAMBER_FOOT, cfg.strike, e);
+        pose.backFoot = cfg.stanceBack;
+        pose.frontHand = cfg.offHand;
+        pose.backHand = pt(cfg.offHand.x - 6, cfg.offHand.y + 6);
+      } else {
+        // Fist travels chin chamber -> strike target.
+        pose.frontHand = lerpPt(CHAMBER_HAND, cfg.strike, e);
+        pose.backHand = cfg.offHand;
+        pose.frontFoot = cfg.stanceFront;
+        pose.backFoot = cfg.stanceBack;
+      }
     }
   } else if (blocking) {
-    frontArmSwing = 1.0;
-    backArmSwing = 0.8;
-    torsoLean = 0.08;
-    crouch = 0.15;
-    frontLegBend = 0.15;
-    backLegBend = 0.15;
+    pose.torsoPitch = 0.08;
+    pose.crouch = 0.16;
+    pose.frontHand = pt(20, -16);
+    pose.backHand = pt(15, -20);
+    pose.frontFoot = pt(14, 0);
+    pose.backFoot = pt(-14, 0);
   } else if (wallSliding) {
-    // Braced against a wall: legs bent and pushing off it, torso leaning back away from it.
-    frontLegSwing = 0.3;
-    backLegSwing = 0.1;
-    frontLegBend = 0.5;
-    backLegBend = 0.5;
-    frontArmSwing = 0.9;
-    backArmSwing = 0.6;
-    torsoLean = -0.22;
-    crouch = 0.08;
+    pose.torsoPitch = -0.22;
+    pose.crouch = 0.1;
+    pose.frontHand = pt(24, -4);
+    pose.backHand = pt(18, -12);
+    pose.frontFoot = pt(18, -22);
+    pose.backFoot = pt(10, -30);
   } else if (running) {
     const s = Math.sin(phase);
-    frontLegSwing = s;
-    backLegSwing = -s;
-    frontLegBend = 0.15 + 0.1 * Math.abs(s);
-    backLegBend = 0.15 + 0.1 * Math.abs(s);
-    torsoLean = 0.14;
-    frontArmSwing = -s * 0.8;
-    backArmSwing = s * 0.8;
+    const lift = Math.max(0, Math.sin(phase + Math.PI / 2));
+    pose.torsoPitch = 0.16;
+    pose.crouch = 0.1;
+    pose.frontFoot = pt(s * 34, -Math.max(0, s) * 16);
+    pose.backFoot = pt(-s * 34, -Math.max(0, -s) * 16 - lift * 4);
+    // Arms pump opposite the legs, elbows staying bent.
+    pose.frontHand = pt(12 - s * 22, -2 + Math.abs(s) * 4);
+    pose.backHand = pt(12 + s * 22, -2 + Math.abs(s) * 4);
   } else if (Math.abs(vy) > 5) {
-    // Airborne pose: tuck legs going up, extend going down.
     if (vy < 0) {
+      // Rising: legs tucked, guard up.
       const tuck = Math.min(-vy / 800, 1);
-      frontLegBend = tuck;
-      backLegBend = tuck * 0.8;
-      frontLegSwing = 0.2;
-      backLegSwing = -0.1;
-      frontArmSwing = 0.6;
-      backArmSwing = 0.6;
+      pose.frontFoot = pt(14, -18 - tuck * 22);
+      pose.backFoot = pt(-10, -14 - tuck * 18);
+      pose.frontHand = pt(20, -12);
+      pose.backHand = pt(14, -8);
     } else {
-      frontLegBend = 0.15;
-      backLegBend = 0.2;
-      frontLegSwing = 0.15;
-      backLegSwing = -0.15;
-      frontArmSwing = -0.3;
-      backArmSwing = -0.3;
-      torsoLean = 0.08;
+      // Falling: legs reaching for the ground.
+      pose.torsoPitch = 0.08;
+      pose.frontFoot = pt(16, -10);
+      pose.backFoot = pt(-14, -4);
+      pose.frontHand = pt(24, 4);
+      pose.backHand = pt(16, 8);
     }
   } else {
-    // Fighting-ready idle: staggered stance, loose guard, gentle sway.
-    const s = Math.sin(phase) * 0.05;
-    frontLegSwing = 0.28 + s;
-    backLegSwing = -0.28 + s;
-    frontLegBend = 0.18;
-    backLegBend = 0.14;
-    frontArmSwing = 0.6 + s * 2;
-    backArmSwing = 0.35 - s * 2;
-    torsoLean = 0.12;
-    crouch = 0.08;
+    // Fighting-ready idle: staggered stance, fists at the chin, gentle sway.
+    const s = Math.sin(phase) * 3;
+    pose.frontFoot = pt(18, 0);
+    pose.backFoot = pt(-16, 0);
+    pose.frontHand = pt(GUARD_FRONT.x + s, GUARD_FRONT.y + s * 0.6);
+    pose.backHand = pt(GUARD_BACK.x - s * 0.5, GUARD_BACK.y + s * 0.6);
+    pose.crouch = 0.08 + Math.sin(phase) * 0.01;
   }
 
-  return {
-    frontLegSwing,
-    backLegSwing,
-    frontLegBend,
-    backLegBend,
-    frontArmSwing,
-    backArmSwing,
-    torsoLean: torsoLean + knockLean,
-    crouch,
-    scaleX: 1 / Math.sqrt(squash),
-    scaleY: squash,
-  };
+  pose.torsoPitch += knockLean;
+  return pose;
 }
 
 /** Linear pose blend for animation smoothing. */
 export function blendPose(from: Pose, to: Pose, t: number): Pose {
-  const lerp = (a: number, b: number) => a + (b - a) * t;
   return {
-    frontLegSwing: lerp(from.frontLegSwing, to.frontLegSwing),
-    backLegSwing: lerp(from.backLegSwing, to.backLegSwing),
-    frontLegBend: lerp(from.frontLegBend, to.frontLegBend),
-    backLegBend: lerp(from.backLegBend, to.backLegBend),
-    frontArmSwing: lerp(from.frontArmSwing, to.frontArmSwing),
-    backArmSwing: lerp(from.backArmSwing, to.backArmSwing),
-    torsoLean: lerp(from.torsoLean, to.torsoLean),
-    crouch: lerp(from.crouch, to.crouch),
-    scaleX: lerp(from.scaleX, to.scaleX),
-    scaleY: lerp(from.scaleY, to.scaleY),
+    torsoPitch: from.torsoPitch + (to.torsoPitch - from.torsoPitch) * t,
+    crouch: from.crouch + (to.crouch - from.crouch) * t,
+    frontHand: lerpPt(from.frontHand, to.frontHand, t),
+    backHand: lerpPt(from.backHand, to.backHand, t),
+    frontFoot: lerpPt(from.frontFoot, to.frontFoot, t),
+    backFoot: lerpPt(from.backFoot, to.backFoot, t),
+    frontElbowSide: to.frontElbowSide,
+    backElbowSide: to.backElbowSide,
+    frontKneeSide: to.frontKneeSide,
+    backKneeSide: to.backKneeSide,
   };
-}
-
-export interface Pt {
-  x: number;
-  y: number;
 }
 
 export interface Limb {
@@ -263,48 +270,76 @@ export interface Skeleton {
   backArm: Limb;
 }
 
-/** Computes elbow/knee and hand/foot positions for one limb. Positive swing = forward. */
-function limbPoints(origin: Pt, swing: number, bend: number, upperLen: number, lowerLen: number, dir: number): Limb {
-  const upperAngle = Math.PI / 2 - swing * 0.9;
-  const mid = {
-    x: origin.x + Math.cos(upperAngle) * upperLen * dir,
-    y: origin.y + Math.sin(upperAngle) * upperLen,
-  };
-  const lowerAngle = upperAngle + bend * 1.7;
-  const end = {
-    x: mid.x + Math.cos(lowerAngle) * lowerLen * dir,
-    y: mid.y + Math.sin(lowerAngle) * lowerLen,
-  };
-  return { origin, mid, end };
+/**
+ * Two-bone analytic IK: places the joint so origin->mid->end reaches toward
+ * the target, clamping when out of range. `side` picks the bend direction.
+ */
+function solveLimb(origin: Pt, target: Pt, l1: number, l2: number, side: 1 | -1): Limb {
+  let dx = target.x - origin.x;
+  let dy = target.y - origin.y;
+  let d = Math.hypot(dx, dy);
+  const minD = Math.abs(l1 - l2) + 0.5;
+  const maxD = l1 + l2 - 0.5;
+  if (d < 1e-4) {
+    dx = 0;
+    dy = 1;
+    d = 1;
+  }
+  const clamped = Math.max(minD, Math.min(maxD, d));
+  const ux = dx / d;
+  const uy = dy / d;
+  const end: Pt = { x: origin.x + ux * clamped, y: origin.y + uy * clamped };
+  // Law of cosines for the joint.
+  const a = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + clamped * clamped - l2 * l2) / (2 * l1 * clamped))));
+  const base = Math.atan2(end.y - origin.y, end.x - origin.x);
+  const jointAngle = base + a * side;
+  const mid: Pt = { x: origin.x + Math.cos(jointAngle) * l1, y: origin.y + Math.sin(jointAngle) * l1 };
+  // Copy the origin: limbs share hip/shoulder objects and mirroring must not double-flip.
+  return { origin: { x: origin.x, y: origin.y }, mid, end };
 }
 
 /**
- * Full skeleton in feet-origin local space (y up = negative). The torso
- * genuinely pitches with torsoLean, so a big lean drops the head.
+ * Full skeleton in feet-origin local space (y up = negative), mirrored by
+ * facing. Hands/feet land on their targets via IK, so elbows and knees bend
+ * naturally: a fist by the chin folds the arm, an extended punch straightens it.
  */
 export function computeSkeleton(pose: Pose, facing: 1 | -1): Skeleton {
-  const sy = pose.scaleY;
-  const dir = facing;
-  const lean = Math.max(-1.45, Math.min(1.45, pose.torsoLean));
-
-  const hip: Pt = { x: 0, y: -(THIGH_LEN + SHIN_LEN) * sy * (1 - pose.crouch * 0.3) };
+  const pitch = Math.max(-1.45, Math.min(1.45, pose.torsoPitch));
+  const hip: Pt = { x: 0, y: -LEG_LEN * (1 - pose.crouch * 0.3) };
   const shoulder: Pt = {
-    x: hip.x + Math.sin(lean) * TORSO_LEN * sy * dir,
-    y: hip.y - Math.cos(lean) * TORSO_LEN * sy,
+    x: hip.x + Math.sin(pitch) * TORSO_LEN,
+    y: hip.y - Math.cos(pitch) * TORSO_LEN,
   };
   const headDist = HEAD_R + 4;
   const headCenter: Pt = {
-    x: shoulder.x + Math.sin(lean) * headDist * dir,
-    y: shoulder.y - Math.cos(lean) * headDist,
+    x: shoulder.x + Math.sin(pitch) * headDist,
+    y: shoulder.y - Math.cos(pitch) * headDist,
   };
 
-  return {
+  const frontHandTarget: Pt = { x: shoulder.x + pose.frontHand.x, y: shoulder.y + pose.frontHand.y };
+  const backHandTarget: Pt = { x: shoulder.x + pose.backHand.x, y: shoulder.y + pose.backHand.y };
+
+  const sk: Skeleton = {
     hip,
     shoulder,
     headCenter,
-    frontLeg: limbPoints(hip, pose.frontLegSwing, pose.frontLegBend, THIGH_LEN * sy, SHIN_LEN * sy, dir),
-    backLeg: limbPoints(hip, pose.backLegSwing, pose.backLegBend, THIGH_LEN * sy, SHIN_LEN * sy, dir),
-    frontArm: limbPoints(shoulder, pose.frontArmSwing, 0.15, UPPER_ARM_LEN * sy, FOREARM_LEN * sy, dir),
-    backArm: limbPoints(shoulder, pose.backArmSwing, 0.15, UPPER_ARM_LEN * sy, FOREARM_LEN * sy, dir),
+    frontLeg: solveLimb(hip, pose.frontFoot, THIGH_LEN, SHIN_LEN, pose.frontKneeSide),
+    backLeg: solveLimb(hip, pose.backFoot, THIGH_LEN, SHIN_LEN, pose.backKneeSide),
+    // Elbow side default: elbows hang below/behind the punch line.
+    frontArm: solveLimb(shoulder, frontHandTarget, UPPER_ARM_LEN, FOREARM_LEN, pose.frontElbowSide),
+    backArm: solveLimb(shoulder, backHandTarget, UPPER_ARM_LEN, FOREARM_LEN, pose.backElbowSide),
   };
+
+  if (facing === -1) {
+    const flip = (p: Pt) => (p.x = -p.x);
+    flip(sk.hip);
+    flip(sk.shoulder);
+    flip(sk.headCenter);
+    for (const limb of [sk.frontLeg, sk.backLeg, sk.frontArm, sk.backArm]) {
+      flip(limb.origin);
+      flip(limb.mid);
+      flip(limb.end);
+    }
+  }
+  return sk;
 }
