@@ -3,12 +3,14 @@ export interface Options {
   shakeIntensity: number;
   soundVolume: number;
   aiDifficulty: "easy" | "medium" | "hard";
+  /** Projection mapping mode: map geometry and backgrounds render black so only fighters and effects hit the wall. */
+  projectionMode: boolean;
 }
 
 const STORAGE_KEY = "wallfu.options";
 
 export function defaultOptions(): Options {
-  return { roundsToWin: 2, shakeIntensity: 1, soundVolume: 0.7, aiDifficulty: "medium" };
+  return { roundsToWin: 2, shakeIntensity: 1, soundVolume: 0.7, aiDifficulty: "medium", projectionMode: false };
 }
 
 export function loadOptions(): Options {

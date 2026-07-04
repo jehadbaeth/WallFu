@@ -535,7 +535,23 @@ async function main() {
     document.getElementById("opt-volume-value")!.textContent = `${Math.round(options.soundVolume * 100)}%`;
     const d = options.aiDifficulty;
     document.getElementById("opt-ai-value")!.textContent = d.charAt(0).toUpperCase() + d.slice(1);
+    document.getElementById("opt-projection")!.textContent = options.projectionMode ? "On" : "Off";
   }
+  function applyProjectionMode() {
+    // In projection mode nothing but the fighters and effects should emit light:
+    // the real objects on the wall play the role of the platforms.
+    mapGeometry.visible = !options.projectionMode;
+    bgLayer.visible = !options.projectionMode;
+    p1Controls.visible = !options.projectionMode;
+    p2Controls.visible = !options.projectionMode;
+  }
+  applyProjectionMode();
+  document.getElementById("opt-projection")!.addEventListener("click", () => {
+    options.projectionMode = !options.projectionMode;
+    saveOptions(options);
+    applyProjectionMode();
+    refreshOptionsUI();
+  });
   function stepAiDifficulty(delta: number) {
     const i = AI_DIFFICULTIES.indexOf(options.aiDifficulty);
     const next = Math.min(AI_DIFFICULTIES.length - 1, Math.max(0, i + delta));
