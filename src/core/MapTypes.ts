@@ -38,6 +38,23 @@ export function defaultMap(width: number, height: number): MapData {
   };
 }
 
+/** Rescales a map into the target coordinate space. Needed for maps saved before the virtual-resolution change. */
+export function fitMapTo(map: MapData, width: number, height: number): MapData {
+  if (map.width === width && map.height === height) return cloneMap(map);
+  const sx = width / map.width;
+  const sy = height / map.height;
+  const scaleRect = (r: Rect): Rect => ({ x: r.x * sx, y: r.y * sy, w: r.w * sx, h: r.h * sy });
+  return {
+    name: map.name,
+    width,
+    height,
+    platforms: map.platforms.map(scaleRect),
+    walls: map.walls.map(scaleRect),
+    spawn1: { x: map.spawn1.x * sx, y: map.spawn1.y * sy },
+    spawn2: { x: map.spawn2.x * sx, y: map.spawn2.y * sy },
+  };
+}
+
 export function cloneMap(map: MapData): MapData {
   return {
     name: map.name,

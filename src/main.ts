@@ -8,7 +8,7 @@ import { StickFigureView } from "./render/StickFigure";
 import { ParticleSystem } from "./effects/Particles";
 import { CameraShake } from "./effects/CameraShake";
 import { ShockRingSystem } from "./effects/ShockRing";
-import { type MapData, defaultMap, listSavedMaps, saveMapToStorage, loadMapFromStorage } from "./core/MapTypes";
+import { type MapData, defaultMap, fitMapTo, listSavedMaps, saveMapToStorage, loadMapFromStorage } from "./core/MapTypes";
 import { loadOptions, saveOptions } from "./core/Options";
 import { MapEditor, type EditorTool } from "./editor/MapEditor";
 import { sound } from "./effects/Sound";
@@ -20,6 +20,11 @@ const YELLOW = 0xffe14d;
 
 const FIXED_DT = 1 / 60;
 const KO_FREEZE_TIME = 1.0;
+
+// The whole game plays in a fixed virtual space; the viewport letterboxes it
+// onto whatever screen it runs on (TV, phone, projector).
+const VIRTUAL_W = 1920;
+const VIRTUAL_H = 1080;
 
 type GameState = "menu" | "options" | "editor" | "fight";
 
@@ -37,14 +42,26 @@ async function main() {
   window.addEventListener("pointerdown", () => sound.unlock(), { once: true });
   window.addEventListener("keydown", () => sound.unlock(), { once: true });
 
-  let currentMap: MapData = defaultMap(app.screen.width, app.screen.height);
+  let currentMap: MapData = defaultMap(VIRTUAL_W, VIRTUAL_H);
+
+  const viewport = new Container();
+  app.stage.addChild(viewport);
+  function fitViewport() {
+    const scale = Math.min(app.screen.width / VIRTUAL_W, app.screen.height / VIRTUAL_H);
+    viewport.scale.set(scale);
+    viewport.position.set((app.screen.width - VIRTUAL_W * scale) / 2, (app.screen.height - VIRTUAL_H * scale) / 2);
+  }
+  fitViewport();
 
   const world = new Container();
-  app.stage.addChild(world);
+  viewport.addChild(world);
 
   const editorLayer = new Container();
-  app.stage.addChild(editorLayer);
-  const mapEditor = new MapEditor(app, editorLayer, currentMap);
+  viewport.addChild(editorLayer);
+  const mapEditor = new MapEditor(app, editorLayer, currentMap, (x, y) => ({
+    x: (x - viewport.position.x) / viewport.scale.x,
+    y: (y - viewport.position.y) / viewport.scale.y,
+  }));
 
   const mapGeometry = new Graphics();
   world.addChild(mapGeometry);
@@ -94,10 +111,10 @@ async function main() {
 
   // --- UI: health bars, round dots, KO banner ---
   const uiLayer = new Container();
-  app.stage.addChild(uiLayer);
+  viewport.addChild(uiLayer);
 
-  const BAR_W = 360;
-  const BAR_H = 26;
+  const BAR_W = 520;
+  const BAR_H = 30;
 
   const p1BarBg = new Graphics();
   const p1BarFg = new Graphics();
@@ -111,10 +128,10 @@ async function main() {
 
   const koStyle = new TextStyle({
     fontFamily: "monospace",
-    fontSize: 72,
+    fontSize: 110,
     fontWeight: "900",
     fill: WHITE,
-    letterSpacing: 4,
+    letterSpacing: 6,
   });
   const koText = new Text({ text: "K.O.", style: koStyle });
   koText.anchor.set(0.5);
@@ -154,7 +171,7 @@ async function main() {
 
   const controlsStyleOpts = {
     fontFamily: "monospace",
-    fontSize: 15,
+    fontSize: 19,
     fontWeight: "700",
     fill: WHITE,
     letterSpacing: 0.5,
@@ -175,32 +192,26 @@ async function main() {
   uiLayer.addChild(p1Controls, p2Controls);
 
   function layoutUI() {
-    p1BarBg.position.set(40, 30);
-    p1BarFg.position.set(40, 30);
-    p2BarBg.position.set(app.screen.width - 40 - BAR_W, 30);
-    p2BarFg.position.set(app.screen.width - 40 - BAR_W, 30);
-    dotsLayer1.position.set(40, 64);
-    dotsLayer2.position.set(app.screen.width - 40 - BAR_W, 64);
-    koText.position.set(app.screen.width / 2, app.screen.height / 2 - 80);
-    matchOverHint.position.set(app.screen.width / 2, app.screen.height / 2 - 20);
-    p1ComboText.position.set(40, 130);
-    p2ComboText.position.set(app.screen.width - 40, 130);
-    p1Controls.position.set(24, app.screen.height - 16);
-    p2Controls.position.set(app.screen.width - 24, app.screen.height - 16);
+    p1BarBg.position.set(48, 36);
+    p1BarFg.position.set(48, 36);
+    p2BarBg.position.set(VIRTUAL_W - 48 - BAR_W, 36);
+    p2BarFg.position.set(VIRTUAL_W - 48 - BAR_W, 36);
+    dotsLayer1.position.set(48, 76);
+    dotsLayer2.position.set(VIRTUAL_W - 48 - BAR_W, 76);
+    koText.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2 - 80);
+    matchOverHint.position.set(VIRTUAL_W / 2, VIRTUAL_H / 2 - 20);
+    p1ComboText.position.set(48, 150);
+    p2ComboText.position.set(VIRTUAL_W - 48, 150);
+    p1Controls.position.set(28, VIRTUAL_H - 18);
+    p2Controls.position.set(VIRTUAL_W - 28, VIRTUAL_H - 18);
     flashOverlay.clear();
-    flashOverlay.rect(0, 0, app.screen.width, app.screen.height);
+    flashOverlay.rect(0, 0, VIRTUAL_W, VIRTUAL_H);
     flashOverlay.fill({ color: WHITE, alpha: 1 });
   }
   layoutUI();
   flashOverlay.alpha = 0;
 
-  window.addEventListener("resize", () => {
-    layoutUI();
-    if (currentMap.name === "Flat Floor" && state !== "editor") {
-      currentMap = defaultMap(app.screen.width, app.screen.height);
-      drawMapGeometry();
-    }
-  });
+  window.addEventListener("resize", () => fitViewport());
 
   function drawHealthBar(bg: Graphics, fg: Graphics, health: number, maxHealth: number, color: number, rightAlign: boolean) {
     bg.clear();
@@ -381,7 +392,7 @@ async function main() {
   }
 
   function startMatch(map: MapData) {
-    currentMap = map;
+    currentMap = fitMapTo(map, VIRTUAL_W, VIRTUAL_H);
     drawMapGeometry();
     p1Wins = 0;
     p2Wins = 0;
@@ -532,7 +543,7 @@ async function main() {
       alert("Map not found.");
       return;
     }
-    mapEditor.setMap(map);
+    mapEditor.setMap(fitMapTo(map, VIRTUAL_W, VIRTUAL_H));
   });
   document.getElementById("ed-export")!.addEventListener("click", () => {
     const map = mapEditor.getMap();
@@ -554,7 +565,7 @@ async function main() {
       file.text().then((text) => {
         try {
           const map = JSON.parse(text) as MapData;
-          mapEditor.setMap(map);
+          mapEditor.setMap(fitMapTo(map, VIRTUAL_W, VIRTUAL_H));
         } catch {
           alert("Invalid map file.");
         }
@@ -686,8 +697,8 @@ async function main() {
     const scale = 1 + zoomPunch;
     world.scale.set(scale);
     world.position.set(
-      offset.x + (app.screen.width / 2) * (1 - scale),
-      offset.y + (app.screen.height / 2) * (1 - scale),
+      offset.x + (VIRTUAL_W / 2) * (1 - scale),
+      offset.y + (VIRTUAL_H / 2) * (1 - scale),
     );
   });
 }

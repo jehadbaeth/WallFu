@@ -17,14 +17,16 @@ export class MapEditor {
   private dragStart: { x: number; y: number } | null = null;
   private dragCurrent: { x: number; y: number } | null = null;
   private active = false;
+  private toWorld: (x: number, y: number) => { x: number; y: number };
 
   private onPointerDown = (e: PointerEvent) => this.handlePointerDown(e);
   private onPointerMove = (e: PointerEvent) => this.handlePointerMove(e);
   private onPointerUp = (e: PointerEvent) => this.handlePointerUp(e);
 
-  constructor(app: Application, parent: Container, initialMap: MapData) {
+  constructor(app: Application, parent: Container, initialMap: MapData, toWorld?: (x: number, y: number) => { x: number; y: number }) {
     this.app = app;
     this.map = cloneMap(initialMap);
+    this.toWorld = toWorld ?? ((x, y) => ({ x, y }));
     this.layer.addChild(this.g);
     parent.addChild(this.layer);
     this.layer.visible = false;
@@ -75,7 +77,7 @@ export class MapEditor {
 
   private localPoint(e: PointerEvent): { x: number; y: number } {
     const rect = this.app.canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    return this.toWorld(e.clientX - rect.left, e.clientY - rect.top);
   }
 
   private handlePointerDown(e: PointerEvent): void {
