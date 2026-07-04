@@ -1,6 +1,6 @@
 import { Graphics, Container } from "pixi.js";
 import type { Fighter } from "../core/Fighter";
-import { ATTACKS } from "../core/Combat";
+import { ATTACKS, isHeavyKind, type AttackKind } from "../core/Combat";
 
 interface Pose {
   legSwing: number; // -1..1
@@ -99,7 +99,7 @@ export class StickFigureView {
         this.stretchYVelocity = 0;
       } else if (ev.type === "hitTaken") {
         this.hitFlash = 1;
-        const heavy = ev.kind === "heavy";
+        const heavy = isHeavyKind(ev.kind);
         this.squash = ev.blocked ? 0.92 : heavy ? 0.68 : 0.8;
         this.squashVelocity = 0;
         this.knockLean = ev.blocked ? 0 : Math.sign(ev.knockbackVx || 1) * (heavy ? 0.5 : 0.3);
@@ -182,13 +182,33 @@ export class StickFigureView {
   }
 }
 
+interface AttackPoseConfig {
+  lean: number;
+  leanGain: number;
+  armBase: number;
+  armReach: number;
+  backArm: number;
+  legBend: number;
+  crouch: number;
+}
+
+const ATTACK_POSES: Record<AttackKind, AttackPoseConfig> = {
+  light: { lean: 0.15, leanGain: 0.15, armBase: 0.3, armReach: 1.5, backArm: -0.5, legBend: 0.15, crouch: 0 },
+  heavy: { lean: 0.15, leanGain: 0.15, armBase: 0.3, armReach: 1.9, backArm: -0.5, legBend: 0.3, crouch: 0.1 },
+  airLight: { lean: 0.1, leanGain: 0.1, armBase: 0.3, armReach: 1.6, backArm: -0.4, legBend: 0.45, crouch: 0 },
+  airHeavy: { lean: 0.2, leanGain: 0.2, armBase: 0.3, armReach: 2.0, backArm: -0.6, legBend: 0.35, crouch: 0 },
+  diveKick: { lean: 0.6, leanGain: 0.1, armBase: -0.6, armReach: -0.4, backArm: -0.8, legBend: 0.1, crouch: 0 },
+  launcher: { lean: -0.15, leanGain: -0.1, armBase: 0.6, armReach: 1.6, backArm: -0.3, legBend: 0.35, crouch: 0.2 },
+  dashAttack: { lean: 0.35, leanGain: 0.1, armBase: 0.4, armReach: 1.7, backArm: -0.7, legBend: 0.25, crouch: 0.1 },
+};
+
 function buildPose(
   phase: number,
   running: boolean,
   vy: number,
   squash: number,
   facing: 1 | -1,
-  attackKind: "light" | "heavy" | null,
+  attackKind: AttackKind | null,
   blocking: boolean,
   stunned: boolean,
   attackProgress: number,
@@ -209,12 +229,12 @@ function buildPose(
     backArmSwing = -0.7;
     legBend = 0.2;
   } else if (attackKind) {
-    const reach = attackKind === "heavy" ? 1.9 : 1.5;
-    torsoLean = (0.15 + attackProgress * 0.15) * facing;
-    frontArmSwing = 0.3 + reach * Math.min(attackProgress * 1.6, 1);
-    backArmSwing = -0.5;
-    legBend = attackKind === "heavy" ? 0.3 : 0.15;
-    crouch = attackKind === "heavy" ? 0.1 : 0;
+    const cfg = ATTACK_POSES[attackKind];
+    torsoLean = (cfg.lean + attackProgress * cfg.leanGain) * facing;
+    frontArmSwing = cfg.armBase + cfg.armReach * Math.min(attackProgress * 1.6, 1);
+    backArmSwing = cfg.backArm;
+    legBend = cfg.legBend;
+    crouch = cfg.crouch;
   } else if (blocking) {
     frontArmSwing = 1.1;
     backArmSwing = 0.9;

@@ -18,18 +18,24 @@ export type FighterEvent =
   | { type: "ko" };
 
 // Tuned for a fast, snappy, arcade feel rather than realistic physics.
-const MOVE_SPEED = 560; // px/s
-const GROUND_ACCEL = 6400; // px/s^2, near-instant direction changes
+const MOVE_SPEED = 620; // px/s
+const GROUND_ACCEL = 7000; // px/s^2, near-instant direction changes
 const GROUND_FRICTION = 5000; // px/s^2 when no input
-const AIR_ACCEL = 3400;
+const AIR_ACCEL = 3600;
 const GRAVITY = 2600; // px/s^2
 const FAST_FALL_GRAVITY_MULT = 2.6;
 const JUMP_VELOCITY = -900;
 const AIR_JUMP_VELOCITY = -840;
 const DASH_SPEED = 1180;
 const DASH_DURATION = 0.12; // seconds
-const DASH_COOLDOWN = 0.22;
+const DASH_COOLDOWN = 0.18;
 const MAX_FALL_SPEED = 1950;
+
+const DIVE_KICK_VX = 480;
+const DIVE_KICK_VY = 1200;
+const DASH_ATTACK_SPEED = 920;
+
+const AERIAL_KINDS: Set<AttackKind> = new Set(["airLight", "airHeavy", "diveKick"]);
 
 const WALL_SLIDE_MAX_FALL = 260; // capped fall speed while pressed against a wall
 const WALL_JUMP_VX = 640;
@@ -197,8 +203,16 @@ export class Fighter {
         this.attackPhase = null;
         this.attackKind = null;
       }
-      // Root motion: heavily damped movement while attacking.
-      this.vx = moveToward(this.vx, 0, GROUND_FRICTION * 0.6 * dt);
+      // Per-move root motion.
+      if (kind === "diveKick" && this.attackPhase === "active") {
+        this.vx = this.facing * DIVE_KICK_VX;
+        this.vy = DIVE_KICK_VY;
+      } else if (kind === "dashAttack" && this.attackPhase !== "recovery") {
+        this.vx = this.facing * DASH_ATTACK_SPEED;
+      } else if (this.grounded) {
+        // Grounded attacks: heavily damped movement. Aerials keep their momentum.
+        this.vx = moveToward(this.vx, 0, GROUND_FRICTION * 0.6 * dt);
+      }
       this.blocking = false;
     } else {
       this.blocking = this.grounded && intent.block;
@@ -211,7 +225,17 @@ export class Fighter {
       }
 
       if (!this.blocking && (intent.lightPressed || intent.heavyPressed)) {
-        const kind: AttackKind = intent.heavyPressed ? "heavy" : "light";
+        const heavy = intent.heavyPressed;
+        let kind: AttackKind;
+        if (this.isDashing) {
+          kind = "dashAttack";
+        } else if (!this.grounded) {
+          kind = intent.fastFall ? "diveKick" : heavy ? "airHeavy" : "airLight";
+        } else if (intent.fastFall && heavy) {
+          kind = "launcher";
+        } else {
+          kind = heavy ? "heavy" : "light";
+        }
         this.attackKind = kind;
         this.attackPhase = "startup";
         this.attackTimer = ATTACKS[kind].startup;
@@ -291,6 +315,12 @@ export class Fighter {
       this.airJumpsUsed = 0;
       if (!wasGrounded && ground.impactSpeed > 200) {
         this.events.push({ type: "land", impactSpeed: ground.impactSpeed });
+      }
+      // Landing cancels aerial moves so play keeps flowing.
+      if (!wasGrounded && this.attackPhase && AERIAL_KINDS.has(this.attackKind!)) {
+        this.attackPhase = null;
+        this.attackKind = null;
+        this.attackTimer = 0;
       }
     }
     this.checkBlastZone(map);
