@@ -296,6 +296,18 @@ class SoundEngine {
     }
   }
 
+  thunder(): void {
+    this.noiseHit(0.06, { gain: 0.5, filterFreq: 5000, type: "highpass" });
+    this.noiseHit(0.7, { gain: 0.45, filterFreq: 140, type: "lowpass" });
+    this.tone(this.vary(60), 0.6, { type: "sine", endFreq: 30, gain: 0.35 });
+  }
+
+  lava(): void {
+    this.noiseHit(0.9, { gain: 0.3, filterFreq: 220, type: "lowpass" });
+    this.noiseHit(0.4, { gain: 0.15, filterFreq: 2600, type: "highpass" });
+    this.tone(this.vary(90), 0.5, { type: "triangle", endFreq: 50, gain: 0.2 });
+  }
+
   /** Rising two-tone stinger; used when an announcement has no voice line. */
   announce(excitement = 1): void {
     const base = this.vary(340, 0.05) * (0.9 + excitement * 0.15);

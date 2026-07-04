@@ -3,6 +3,18 @@ export interface Rect {
   y: number;
   w: number;
   h: number;
+  /** Platforms only: shakes and falls away shortly after someone stands on it. */
+  crumble?: boolean;
+}
+
+export interface PolyPoint {
+  x: number;
+  y: number;
+}
+
+/** Freeform solid shape drawn point by point; sliced into thin wall strips for collision. */
+export interface Polygon {
+  points: PolyPoint[];
 }
 
 export interface MapData {
@@ -11,10 +23,13 @@ export interface MapData {
   height: number;
   platforms: Rect[];
   walls: Rect[];
+  polygons?: Polygon[];
   spawn1: { x: number; y: number };
   spawn2: { x: number; y: number };
   /** Optional background image as a data URL, stretched across the arena. */
   backgroundImage?: string;
+  /** Enables random arena hazards (daggers, lightning, lava) on this map. */
+  hazardsEnabled?: boolean;
 }
 
 export function defaultMap(width: number, height: number): MapData {
@@ -45,16 +60,18 @@ export function fitMapTo(map: MapData, width: number, height: number): MapData {
   if (map.width === width && map.height === height) return cloneMap(map);
   const sx = width / map.width;
   const sy = height / map.height;
-  const scaleRect = (r: Rect): Rect => ({ x: r.x * sx, y: r.y * sy, w: r.w * sx, h: r.h * sy });
+  const scaleRect = (r: Rect): Rect => ({ x: r.x * sx, y: r.y * sy, w: r.w * sx, h: r.h * sy, ...(r.crumble ? { crumble: true } : {}) });
   return {
     name: map.name,
     width,
     height,
     platforms: map.platforms.map(scaleRect),
     walls: map.walls.map(scaleRect),
+    polygons: map.polygons?.map((p) => ({ points: p.points.map((pt) => ({ x: pt.x * sx, y: pt.y * sy })) })),
     spawn1: { x: map.spawn1.x * sx, y: map.spawn1.y * sy },
     spawn2: { x: map.spawn2.x * sx, y: map.spawn2.y * sy },
     backgroundImage: map.backgroundImage,
+    hazardsEnabled: map.hazardsEnabled,
   };
 }
 
@@ -65,10 +82,57 @@ export function cloneMap(map: MapData): MapData {
     height: map.height,
     platforms: map.platforms.map((r) => ({ ...r })),
     walls: map.walls.map((r) => ({ ...r })),
+    polygons: map.polygons?.map((p) => ({ points: p.points.map((pt) => ({ ...pt })) })),
     spawn1: { ...map.spawn1 },
     spawn2: { ...map.spawn2 },
     backgroundImage: map.backgroundImage,
+    hazardsEnabled: map.hazardsEnabled,
   };
+}
+
+/**
+ * Slices a polygon into thin horizontal wall strips so the rectangle-only
+ * physics can collide with freeform shapes. Works for concave polygons.
+ */
+export function polygonToStrips(points: PolyPoint[], stripHeight = 14): Rect[] {
+  if (points.length < 3) return [];
+  const minY = Math.min(...points.map((p) => p.y));
+  const maxY = Math.max(...points.map((p) => p.y));
+  const strips: Rect[] = [];
+  for (let y = minY; y < maxY; y += stripHeight) {
+    const rowTop = y;
+    const rowH = Math.min(stripHeight, maxY - y);
+    const mid = y + rowH / 2;
+    // Even-odd scanline: collect x crossings of the row's center line.
+    const xs: number[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      if (a.y === b.y) continue;
+      if ((a.y <= mid && b.y > mid) || (b.y <= mid && a.y > mid)) {
+        xs.push(a.x + ((mid - a.y) / (b.y - a.y)) * (b.x - a.x));
+      }
+    }
+    xs.sort((p, q) => p - q);
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      const w = xs[i + 1] - xs[i];
+      if (w >= 4) strips.push({ x: xs[i], y: rowTop, w, h: rowH });
+    }
+  }
+  return strips;
+}
+
+/** Point-in-polygon test (even-odd rule), used by the editor's erase tool. */
+export function pointInPolygon(x: number, y: number, points: PolyPoint[]): boolean {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const a = points[i];
+    const b = points[j];
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 const STORAGE_PREFIX = "wallfu.map.";

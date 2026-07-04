@@ -25,7 +25,17 @@ import { StickFigureView } from "./render/StickFigure";
 import { ParticleSystem } from "./effects/Particles";
 import { CameraShake } from "./effects/CameraShake";
 import { ShockRingSystem } from "./effects/ShockRing";
-import { type MapData, defaultMap, fitMapTo, listSavedMaps, saveMapToStorage, loadMapFromStorage } from "./core/MapTypes";
+import {
+  type MapData,
+  defaultMap,
+  fitMapTo,
+  cloneMap,
+  polygonToStrips,
+  listSavedMaps,
+  saveMapToStorage,
+  loadMapFromStorage,
+} from "./core/MapTypes";
+import { HazardSystem } from "./game/Hazards";
 import { loadOptions, saveOptions } from "./core/Options";
 import { MapEditor, type EditorTool } from "./editor/MapEditor";
 import { sound } from "./effects/Sound";
@@ -60,6 +70,7 @@ async function main() {
   window.addEventListener("keydown", () => sound.unlock(), { once: true });
 
   let currentMap: MapData = defaultMap(VIRTUAL_W, VIRTUAL_H);
+  let fightMap: MapData = currentMap;
 
   const viewport = new Container();
   app.stage.addChild(viewport);
@@ -88,6 +99,7 @@ async function main() {
     applyBackground(bgLayer, currentMap.backgroundImage, VIRTUAL_W, VIRTUAL_H);
     mapGeometry.clear();
     for (const p of currentMap.platforms) {
+      if (p.crumble) continue; // crumbling platforms are drawn (and animated) by the hazard layer
       mapGeometry.rect(p.x, p.y, p.w, p.h);
       mapGeometry.fill({ color: WHITE, alpha: 0.9 });
     }
@@ -95,6 +107,13 @@ async function main() {
       mapGeometry.rect(w.x, w.y, w.w, w.h);
       mapGeometry.fill({ color: WHITE, alpha: 0.55 });
       mapGeometry.rect(w.x, w.y, w.w, w.h);
+      mapGeometry.stroke({ width: 4, color: WHITE, alpha: 0.95 });
+    }
+    for (const poly of currentMap.polygons ?? []) {
+      const flat = poly.points.flatMap((pt) => [pt.x, pt.y]);
+      mapGeometry.poly(flat);
+      mapGeometry.fill({ color: WHITE, alpha: 0.55 });
+      mapGeometry.poly(flat);
       mapGeometry.stroke({ width: 4, color: WHITE, alpha: 0.95 });
     }
   }
@@ -105,6 +124,14 @@ async function main() {
 
   const shockRings = new ShockRingSystem();
   world.addChild(shockRings.view);
+
+  const hazards = new HazardSystem(particles, shockRings, {
+    addShake: (a) => addShake(a),
+    flash: (a) => {
+      screenFlash = Math.max(screenFlash, a);
+    },
+  });
+  world.addChild(hazards.view);
 
   const shake = new CameraShake();
   function addShake(amount: number) {
@@ -476,6 +503,7 @@ async function main() {
     p2ComboTimer = 0;
     finishHimDone = false;
     aiController?.reset();
+    hazards.resetRound();
     const roundNum = p1Wins + p2Wins + 1;
     const bothAtMatchPoint = p1Wins === options.roundsToWin - 1 && p2Wins === options.roundsToWin - 1;
     const roundCall = bothAtMatchPoint ? "vo-final-round" : roundNum <= 5 ? `vo-round-${roundNum}` : null;
@@ -484,6 +512,11 @@ async function main() {
 
   function startMatch(map: MapData) {
     currentMap = fitMapTo(map, VIRTUAL_W, VIRTUAL_H);
+    // The fight runs on its own copy: polygons become thin wall strips for the
+    // rectangle-only physics, and crumbling platforms get removed/restored live.
+    fightMap = cloneMap(currentMap);
+    fightMap.walls.push(...(fightMap.polygons ?? []).flatMap((p) => polygonToStrips(p.points)));
+    hazards.start(fightMap, [player1, player2]);
     drawMapGeometry();
     p1Wins = 0;
     p2Wins = 0;
@@ -524,8 +557,12 @@ async function main() {
     editorToolbarEl.classList.toggle("visible", next === "editor");
     world.visible = next === "fight";
     uiLayer.visible = next === "fight";
-    if (next === "editor") mapEditor.activate(currentMap);
-    else mapEditor.deactivate();
+    if (next === "editor") {
+      mapEditor.activate(currentMap);
+      refreshHazardsButton();
+    } else {
+      mapEditor.deactivate();
+    }
   }
   setState("menu");
 
@@ -562,6 +599,9 @@ async function main() {
     bgLayer.visible = !options.projectionMode;
     p1Controls.visible = !options.projectionMode;
     p2Controls.visible = !options.projectionMode;
+    // Hazard events (daggers, lightning, lava) stay visible when projecting;
+    // only the platform geometry is suppressed.
+    hazards.drawGeometry = !options.projectionMode;
   }
   applyProjectionMode();
   document.getElementById("opt-projection")!.addEventListener("click", () => {
@@ -752,6 +792,8 @@ async function main() {
   const toolButtons: Record<string, EditorTool> = {
     "ed-tool-platform": "platform",
     "ed-tool-wall": "wall",
+    "ed-tool-poly": "poly",
+    "ed-tool-crumble": "crumble",
     "ed-tool-spawn1": "spawn1",
     "ed-tool-spawn2": "spawn2",
     "ed-tool-erase": "erase",
@@ -765,6 +807,18 @@ async function main() {
       }
     });
   }
+
+  const hazardsBtn = document.getElementById("ed-hazards")!;
+  function refreshHazardsButton() {
+    hazardsBtn.textContent = `Hazards: ${mapEditor.getMap().hazardsEnabled ? "On" : "Off"}`;
+    hazardsBtn.classList.toggle("active", !!mapEditor.getMap().hazardsEnabled);
+  }
+  hazardsBtn.addEventListener("click", () => {
+    const map = mapEditor.getMap();
+    map.hazardsEnabled = !map.hazardsEnabled;
+    mapEditor.setMap(map);
+    refreshHazardsButton();
+  });
   document.getElementById("ed-undo")!.addEventListener("click", () => mapEditor.undo());
   document.getElementById("ed-clear")!.addEventListener("click", () => {
     if (confirm("Clear all shapes on this map?")) mapEditor.clear();
@@ -858,6 +912,8 @@ async function main() {
       setState("menu");
     } else if (matchOver && (e.code === "Enter" || e.code === "Escape")) {
       setState("menu");
+    } else if (state === "editor" && e.code === "Escape") {
+      mapEditor.cancelPolyDraft();
     }
   });
 
@@ -901,10 +957,12 @@ async function main() {
       while (accumulator >= FIXED_DT) {
         const intent1 = mergeIntents(player1Input.poll(), player1Gamepad.poll());
         const intent2 = aiController
-          ? aiController.poll(FIXED_DT, player2, player1, currentMap)
+          ? aiController.poll(FIXED_DT, player2, player1, fightMap)
           : mergeIntents(player2Input.poll(), player2Gamepad.poll());
-        player1.update(FIXED_DT, intent1, currentMap);
-        player2.update(FIXED_DT, intent2, currentMap);
+        player1.update(FIXED_DT, intent1, fightMap);
+        player2.update(FIXED_DT, intent2, fightMap);
+
+        if (!koPending && !matchOver) hazards.update(FIXED_DT);
 
         for (const ev of player1.events) handleMovementEvent(player1, ev);
         for (const ev of player2.events) handleMovementEvent(player2, ev);
@@ -982,6 +1040,7 @@ async function main() {
     player2View.update(player2, frameDt);
     particles.update(frameDt);
     shockRings.update(frameDt);
+    hazards.draw();
 
     drawHealthBar(p1BarBg, p1BarFg, player1.health, player1.maxHealth, CYAN, false);
     drawHealthBar(p2BarBg, p2BarFg, player2.health, player2.maxHealth, MAGENTA, true);
