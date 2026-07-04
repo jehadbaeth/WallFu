@@ -10,6 +10,7 @@ import { ShockRingSystem } from "./effects/ShockRing";
 import { type MapData, defaultMap, listSavedMaps, saveMapToStorage, loadMapFromStorage } from "./core/MapTypes";
 import { loadOptions, saveOptions } from "./core/Options";
 import { MapEditor, type EditorTool } from "./editor/MapEditor";
+import { sound } from "./effects/Sound";
 
 const CYAN = 0x2ee6ff;
 const MAGENTA = 0xff2e88;
@@ -17,7 +18,7 @@ const WHITE = 0xffffff;
 const YELLOW = 0xffe14d;
 
 const FIXED_DT = 1 / 60;
-const KO_FREEZE_TIME = 1.4;
+const KO_FREEZE_TIME = 1.0;
 
 type GameState = "menu" | "options" | "editor" | "fight";
 
@@ -31,6 +32,9 @@ async function main() {
   document.getElementById("app")!.appendChild(app.canvas);
 
   const options = loadOptions();
+  sound.setVolume(options.soundVolume);
+  window.addEventListener("pointerdown", () => sound.unlock(), { once: true });
+  window.addEventListener("keydown", () => sound.unlock(), { once: true });
 
   let currentMap: MapData = defaultMap(app.screen.width, app.screen.height);
 
@@ -276,8 +280,10 @@ async function main() {
       const t = Math.min(ev.impactSpeed / 1400, 1);
       particles.dustPuff(fighter.x, fighter.y, WHITE, Math.round(6 + t * 14));
       if (t > 0.5) addShake(0.25 * t);
+      sound.land(t);
     } else if (ev.type === "jump" || ev.type === "airJump") {
       particles.dustPuff(fighter.x, fighter.y, color, 8);
+      sound.jump();
     } else if (ev.type === "dash") {
       particles.burst(fighter.x, fighter.y, color, 14, { speed: 220, spread: Math.PI * 0.6, gravity: 100, size: 3, glow: true });
       particles.streakBurst(fighter.x, fighter.y - 40, color, 8, {
@@ -287,6 +293,18 @@ async function main() {
         size: 5,
       });
       addShake(0.1);
+      sound.dash();
+    } else if (ev.type === "wallJump") {
+      const awayAngle = fighter.facing > 0 ? Math.PI : 0;
+      particles.burst(fighter.x, fighter.y - 40, color, 14, { speed: 300, spread: Math.PI * 0.5, angle: awayAngle, gravity: 200, size: 4, glow: true });
+      particles.streakBurst(fighter.x, fighter.y - 40, WHITE, 8, { angle: awayAngle, speed: 560, spread: 0.4, size: 4 });
+      addShake(0.14);
+      sound.wallJump();
+    } else if (ev.type === "wallBounce") {
+      particles.burst(fighter.x, fighter.y - 50, WHITE, 18, { speed: 400, spread: Math.PI * 1.4, gravity: 300, size: 5, glow: true });
+      shockRings.spawn(fighter.x, fighter.y - 50, color, 60, 0.25, 5);
+      addShake(0.24);
+      sound.wallBounce();
     } else if (ev.type === "attackActive") {
       const heavy = ev.kind === "heavy";
       const reach = heavy ? 68 : 58;
@@ -304,20 +322,22 @@ async function main() {
   }
 
   function spawnHitEffect(x: number, y: number, blocked: boolean, heavy: boolean) {
+    sound.hit(heavy, blocked);
     if (blocked) {
-      particles.burst(x, y, WHITE, heavy ? 14 : 8, { speed: 320, spread: Math.PI * 1.2, gravity: 200, size: 4, glow: true });
-      shockRings.spawn(x, y, WHITE, heavy ? 70 : 45, 0.22, 4);
-      addShake(heavy ? 0.18 : 0.08);
+      particles.burst(x, y, WHITE, heavy ? 18 : 10, { speed: 340, spread: Math.PI * 1.2, gravity: 200, size: 4, glow: true });
+      particles.streakBurst(x, y, WHITE, heavy ? 6 : 3, { angle: Math.PI * Math.random(), speed: 300, spread: Math.PI, size: 3 });
+      shockRings.spawn(x, y, WHITE, heavy ? 80 : 50, 0.22, 4);
+      addShake(heavy ? 0.2 : 0.1);
     } else {
-      particles.burst(x, y, YELLOW, heavy ? 30 : 18, { speed: heavy ? 560 : 400, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5, glow: true });
-      particles.burst(x, y, WHITE, heavy ? 10 : 6, { speed: 220, spread: Math.PI * 2, gravity: 300, size: 3, glow: true });
-      shockRings.spawn(x, y, heavy ? YELLOW : WHITE, heavy ? 130 : 70, heavy ? 0.4 : 0.24, heavy ? 8 : 5);
-      addShake(heavy ? 0.55 : 0.3);
-      if (heavy) {
-        screenFlash = 0.35;
-        zoomPunch = 0.06;
-        zoomPunchVelocity = 0;
-      }
+      particles.burst(x, y, YELLOW, heavy ? 36 : 22, { speed: heavy ? 620 : 440, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5, glow: true });
+      particles.burst(x, y, WHITE, heavy ? 14 : 8, { speed: 260, spread: Math.PI * 2, gravity: 300, size: 3, glow: true });
+      particles.streakBurst(x, y, WHITE, heavy ? 10 : 5, { angle: Math.PI * Math.random(), speed: heavy ? 520 : 380, spread: Math.PI * 2, size: heavy ? 5 : 4 });
+      shockRings.spawn(x, y, heavy ? YELLOW : WHITE, heavy ? 150 : 85, heavy ? 0.42 : 0.26, heavy ? 9 : 6);
+      if (heavy) shockRings.spawn(x, y, WHITE, 90, 0.3, 5);
+      addShake(heavy ? 0.65 : 0.38);
+      screenFlash = heavy ? 0.35 : 0.12;
+      zoomPunch = heavy ? 0.07 : 0.03;
+      zoomPunchVelocity = 0;
     }
   }
 
@@ -331,6 +351,7 @@ async function main() {
     zoomPunchVelocity = 0;
     const victim = loser === "p1" ? player1 : player2;
     shockRings.spawn(victim.x, victim.y - 60, WHITE, 180, 0.5, 10);
+    sound.ko();
   }
 
   function resetRound() {
@@ -385,6 +406,8 @@ async function main() {
   }
   setState("menu");
 
+  document.querySelectorAll(".btn").forEach((btn) => btn.addEventListener("click", () => sound.click()));
+
   document.getElementById("menu-play")!.addEventListener("click", () => {
     startMatch(currentMap);
     setState("fight");
@@ -398,6 +421,7 @@ async function main() {
   function refreshOptionsUI() {
     document.getElementById("opt-rounds-value")!.textContent = String(options.roundsToWin);
     document.getElementById("opt-shake-value")!.textContent = `${Math.round(options.shakeIntensity * 100)}%`;
+    document.getElementById("opt-volume-value")!.textContent = `${Math.round(options.soundVolume * 100)}%`;
   }
   document.getElementById("opt-rounds-down")!.addEventListener("click", () => {
     options.roundsToWin = Math.max(1, options.roundsToWin - 1);
@@ -416,6 +440,18 @@ async function main() {
   });
   document.getElementById("opt-shake-up")!.addEventListener("click", () => {
     options.shakeIntensity = Math.min(2, +(options.shakeIntensity + 0.25).toFixed(2));
+    saveOptions(options);
+    refreshOptionsUI();
+  });
+  document.getElementById("opt-volume-down")!.addEventListener("click", () => {
+    options.soundVolume = Math.max(0, +(options.soundVolume - 0.1).toFixed(2));
+    sound.setVolume(options.soundVolume);
+    saveOptions(options);
+    refreshOptionsUI();
+  });
+  document.getElementById("opt-volume-up")!.addEventListener("click", () => {
+    options.soundVolume = Math.min(1, +(options.soundVolume + 0.1).toFixed(2));
+    sound.setVolume(options.soundVolume);
     saveOptions(options);
     refreshOptionsUI();
   });
