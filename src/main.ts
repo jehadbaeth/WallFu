@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
 import { Fighter, type FighterEvent } from "./core/Fighter";
-import { resolveCombat } from "./core/Combat";
+import { resolveCombat, isHeavyKind, ATTACKS, type AttackKind } from "./core/Combat";
+import { AIController, AI_DIFFICULTIES } from "./core/AIController";
 import { KeyboardIntentSource, P1_BINDINGS, P2_BINDINGS } from "./core/KeyboardInput";
 import { GamepadIntentSource, mergeIntents } from "./core/GamepadInput";
 import { StickFigureView } from "./render/StickFigure";
@@ -84,6 +85,7 @@ async function main() {
   const player2Input = new KeyboardIntentSource(P2_BINDINGS);
   const player1Gamepad = new GamepadIntentSource(0);
   const player2Gamepad = new GamepadIntentSource(1);
+  let aiController: AIController | null = null; // non-null while in a vs-AI match
 
   const player1View = new StickFigureView(CYAN);
   const player2View = new StickFigureView(MAGENTA);
@@ -150,20 +152,21 @@ async function main() {
   let p2ComboTimer = 0;
   const COMBO_RESET_TIME = 1.1;
 
-  const controlsStyle = new TextStyle({
+  const controlsStyleOpts = {
     fontFamily: "monospace",
     fontSize: 15,
     fontWeight: "700",
     fill: WHITE,
     letterSpacing: 0.5,
-  });
+  } as const;
+  const controlsStyle = new TextStyle(controlsStyleOpts);
   const p1Controls = new Text({
-    text: "P1  A/D Move  W Jump  S Fast-Fall  F Light  G Heavy  H Block  J Dash",
+    text: "P1  A/D Move  W Jump  S Down  F Light  G Heavy  H Block  J Dash\nS+G Launcher   Air S+F Dive Kick   Dash+F/G Dash Attack   W at wall Wall Jump",
     style: controlsStyle,
   });
   const p2Controls = new Text({
-    text: "P2  ←/→ Move  ↑ Jump  ↓ Fast-Fall  Num1 Light  Num2 Heavy  Num3 Block  Num4 Dash",
-    style: controlsStyle,
+    text: "P2  ←/→ Move  ↑ Jump  ↓ Down  Num1 Light  Num2 Heavy  Num3 Block  Num4 Dash\n↓+Num2 Launcher   Air ↓+Num1 Dive Kick   Dash+Attack Dash Attack",
+    style: new TextStyle({ ...controlsStyleOpts, align: "right" }),
   });
   p1Controls.anchor.set(0, 1);
   p2Controls.anchor.set(1, 1);
@@ -306,11 +309,10 @@ async function main() {
       addShake(0.24);
       sound.wallBounce();
     } else if (ev.type === "attackActive") {
-      const heavy = ev.kind === "heavy";
-      const reach = heavy ? 68 : 58;
-      const height = heavy ? 82 : 70;
-      const originX = fighter.x + fighter.facing * (18 + reach * 0.6);
-      const originY = fighter.y - height * 0.6;
+      const data = ATTACKS[ev.kind];
+      const heavy = isHeavyKind(ev.kind);
+      const originX = fighter.x + fighter.facing * (18 + data.range * 0.6);
+      const originY = fighter.y - data.height * 0.6;
       particles.burst(originX, originY, color, heavy ? 14 : 8, {
         speed: heavy ? 80 : 50,
         spread: 0.6,
@@ -318,27 +320,37 @@ async function main() {
         size: heavy ? 6 : 4,
         glow: true,
       });
+      if (ev.kind === "diveKick") {
+        particles.streakBurst(fighter.x, fighter.y, color, 6, { angle: Math.PI / 2 - fighter.facing * 0.4, speed: 500, spread: 0.4, size: 4 });
+      }
     }
   }
 
-  function spawnHitEffect(x: number, y: number, blocked: boolean, heavy: boolean) {
+  function spawnHitEffect(x: number, y: number, blocked: boolean, heavy: boolean, dirX: number, kind: AttackKind) {
     sound.hit(heavy, blocked);
     if (blocked) {
       particles.burst(x, y, WHITE, heavy ? 18 : 10, { speed: 340, spread: Math.PI * 1.2, gravity: 200, size: 4, glow: true });
       particles.streakBurst(x, y, WHITE, heavy ? 6 : 3, { angle: Math.PI * Math.random(), speed: 300, spread: Math.PI, size: 3 });
       shockRings.spawn(x, y, WHITE, heavy ? 80 : 50, 0.22, 4);
       addShake(heavy ? 0.2 : 0.1);
-    } else {
-      particles.burst(x, y, YELLOW, heavy ? 36 : 22, { speed: heavy ? 620 : 440, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5, glow: true });
-      particles.burst(x, y, WHITE, heavy ? 14 : 8, { speed: 260, spread: Math.PI * 2, gravity: 300, size: 3, glow: true });
-      particles.streakBurst(x, y, WHITE, heavy ? 10 : 5, { angle: Math.PI * Math.random(), speed: heavy ? 520 : 380, spread: Math.PI * 2, size: heavy ? 5 : 4 });
-      shockRings.spawn(x, y, heavy ? YELLOW : WHITE, heavy ? 150 : 85, heavy ? 0.42 : 0.26, heavy ? 9 : 6);
-      if (heavy) shockRings.spawn(x, y, WHITE, 90, 0.3, 5);
-      addShake(heavy ? 0.65 : 0.38);
-      screenFlash = heavy ? 0.35 : 0.12;
-      zoomPunch = heavy ? 0.07 : 0.03;
-      zoomPunchVelocity = 0;
+      return;
     }
+    // Sparks fly along the knockback direction (straight up for launchers).
+    const knockAngle = kind === "launcher" ? -Math.PI / 2 : dirX > 0 ? 0 : Math.PI;
+    particles.burst(x, y, YELLOW, heavy ? 36 : 22, { speed: heavy ? 620 : 440, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5, glow: true });
+    particles.burst(x, y, WHITE, heavy ? 14 : 8, { speed: 260, spread: Math.PI * 2, gravity: 300, size: 3, glow: true });
+    particles.streakBurst(x, y, WHITE, heavy ? 12 : 6, { angle: knockAngle, speed: heavy ? 640 : 460, spread: 0.9, size: heavy ? 5 : 4 });
+    shockRings.spawn(x, y, heavy ? YELLOW : WHITE, heavy ? 150 : 85, heavy ? 0.42 : 0.26, heavy ? 9 : 6);
+    if (heavy) shockRings.spawn(x, y, WHITE, 90, 0.3, 5);
+    if (kind === "launcher") {
+      // Rising column to sell the launch.
+      particles.streakBurst(x, y - 30, YELLOW, 10, { angle: -Math.PI / 2, speed: 700, spread: 0.5, size: 5 });
+      shockRings.spawn(x, y - 60, YELLOW, 110, 0.35, 6);
+    }
+    addShake(heavy ? 0.65 : 0.38);
+    screenFlash = heavy ? 0.35 : 0.12;
+    zoomPunch = heavy ? 0.07 : 0.03;
+    zoomPunchVelocity = 0;
   }
 
   function beginRoundEnd(loser: "p1" | "p2") {
@@ -365,6 +377,7 @@ async function main() {
     p1ComboTimer = 0;
     p2ComboCount = 0;
     p2ComboTimer = 0;
+    aiController?.reset();
   }
 
   function startMatch(map: MapData) {
@@ -409,6 +422,12 @@ async function main() {
   document.querySelectorAll(".btn").forEach((btn) => btn.addEventListener("click", () => sound.click()));
 
   document.getElementById("menu-play")!.addEventListener("click", () => {
+    aiController = null;
+    startMatch(currentMap);
+    setState("fight");
+  });
+  document.getElementById("menu-play-ai")!.addEventListener("click", () => {
+    aiController = new AIController(options.aiDifficulty);
     startMatch(currentMap);
     setState("fight");
   });
@@ -422,7 +441,18 @@ async function main() {
     document.getElementById("opt-rounds-value")!.textContent = String(options.roundsToWin);
     document.getElementById("opt-shake-value")!.textContent = `${Math.round(options.shakeIntensity * 100)}%`;
     document.getElementById("opt-volume-value")!.textContent = `${Math.round(options.soundVolume * 100)}%`;
+    const d = options.aiDifficulty;
+    document.getElementById("opt-ai-value")!.textContent = d.charAt(0).toUpperCase() + d.slice(1);
   }
+  function stepAiDifficulty(delta: number) {
+    const i = AI_DIFFICULTIES.indexOf(options.aiDifficulty);
+    const next = Math.min(AI_DIFFICULTIES.length - 1, Math.max(0, i + delta));
+    options.aiDifficulty = AI_DIFFICULTIES[next];
+    saveOptions(options);
+    refreshOptionsUI();
+  }
+  document.getElementById("opt-ai-down")!.addEventListener("click", () => stepAiDifficulty(-1));
+  document.getElementById("opt-ai-up")!.addEventListener("click", () => stepAiDifficulty(1));
   document.getElementById("opt-rounds-down")!.addEventListener("click", () => {
     options.roundsToWin = Math.max(1, options.roundsToWin - 1);
     saveOptions(options);
@@ -546,13 +576,17 @@ async function main() {
     }
   });
 
+  let accumulator = 0;
   app.ticker.add((ticker) => {
     if (state !== "fight" || matchOver) return;
 
     const frameDt = Math.min(ticker.deltaMS / 1000, 0.1);
 
+    // Simulation time scale: KO plays out in dramatic slow motion, hitstop freezes.
+    let simDt = frameDt;
     if (koFreezeTimer > 0) {
       koFreezeTimer -= frameDt;
+      simDt = frameDt * 0.15;
       if (koFreezeTimer <= 0 && koPending) {
         if (koPending === "p1") p2Wins++;
         else p1Wins++;
@@ -569,12 +603,17 @@ async function main() {
       }
     } else if (hitstopTimer > 0) {
       hitstopTimer -= frameDt;
-    } else {
-      let accumulator = frameDt;
+      simDt = 0;
+    }
+
+    {
+      accumulator += simDt;
 
       while (accumulator >= FIXED_DT) {
         const intent1 = mergeIntents(player1Input.poll(), player1Gamepad.poll());
-        const intent2 = mergeIntents(player2Input.poll(), player2Gamepad.poll());
+        const intent2 = aiController
+          ? aiController.poll(FIXED_DT, player2, player1, currentMap)
+          : mergeIntents(player2Input.poll(), player2Gamepad.poll());
         player1.update(FIXED_DT, intent1, currentMap);
         player2.update(FIXED_DT, intent2, currentMap);
 
@@ -588,15 +627,23 @@ async function main() {
 
         const hits = resolveCombat(player1, player2);
         for (const hit of hits) {
-          spawnHitEffect(hit.x, hit.y, hit.blocked, hit.kind === "heavy");
+          const dirX = Math.sign(hit.defender.x - hit.attacker.x) || hit.attacker.facing;
+          spawnHitEffect(hit.x, hit.y, hit.blocked, isHeavyKind(hit.kind), dirX, hit.kind);
           hitstopTimer = Math.max(hitstopTimer, hit.hitstop);
           if (!hit.blocked) {
+            let combo: number;
             if (hit.attacker === player1) {
-              p1ComboCount++;
+              combo = ++p1ComboCount;
               p1ComboTimer = COMBO_RESET_TIME;
             } else {
-              p2ComboCount++;
+              combo = ++p2ComboCount;
               p2ComboTimer = COMBO_RESET_TIME;
+            }
+            // Combos escalate: extra ring, flash, and shake from the 4th hit on.
+            if (combo >= 4) {
+              shockRings.spawn(hit.x, hit.y, YELLOW, 100 + combo * 14, 0.35, 6);
+              screenFlash = Math.max(screenFlash, 0.18);
+              addShake(0.15);
             }
           }
         }

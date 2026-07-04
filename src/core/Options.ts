@@ -2,12 +2,13 @@ export interface Options {
   roundsToWin: number;
   shakeIntensity: number;
   soundVolume: number;
+  aiDifficulty: "easy" | "medium" | "hard";
 }
 
 const STORAGE_KEY = "wallfu.options";
 
 export function defaultOptions(): Options {
-  return { roundsToWin: 2, shakeIntensity: 1, soundVolume: 0.7 };
+  return { roundsToWin: 2, shakeIntensity: 1, soundVolume: 0.7, aiDifficulty: "medium" };
 }
 
 export function loadOptions(): Options {
