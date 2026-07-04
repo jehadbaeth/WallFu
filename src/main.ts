@@ -12,7 +12,15 @@ import {
   saveBindings,
 } from "./core/KeyboardInput";
 import { applyBackground, fileToBackgroundDataUrl } from "./render/BackgroundLoader";
-import { GamepadIntentSource, mergeIntents } from "./core/GamepadInput";
+import {
+  GamepadIntentSource,
+  mergeIntents,
+  PAD_ACTIONS,
+  defaultPadBindings,
+  loadPadBindings,
+  savePadBindings,
+  padButtonLabel,
+} from "./core/GamepadInput";
 import { StickFigureView } from "./render/StickFigure";
 import { ParticleSystem } from "./effects/Particles";
 import { CameraShake } from "./effects/CameraShake";
@@ -111,10 +119,11 @@ async function main() {
   player2.facing = -1;
 
   const bindings = loadBindings();
+  const padBindings = loadPadBindings();
   const player1Input = new KeyboardIntentSource(bindings.p1);
   const player2Input = new KeyboardIntentSource(bindings.p2);
-  const player1Gamepad = new GamepadIntentSource(0);
-  const player2Gamepad = new GamepadIntentSource(1);
+  const player1Gamepad = new GamepadIntentSource(0, padBindings.p1);
+  const player2Gamepad = new GamepadIntentSource(1, padBindings.p2);
   let aiController: AIController | null = null; // non-null while in a vs-AI match
 
   const player1View = new StickFigureView(CYAN);
@@ -652,16 +661,92 @@ async function main() {
     }
   }
 
+  // --- Gamepad binding configuration ---
+  const padGrid = document.getElementById("pad-grid")!;
+  let padCaptureCancel: (() => void) | null = null;
+
+  function rebuildPadGrid() {
+    padCaptureCancel?.();
+    padGrid.innerHTML = "";
+    for (const text of ["Action", "P1 Pad", "P2 Pad"]) {
+      const head = document.createElement("span");
+      head.className = "grid-head";
+      head.textContent = text;
+      padGrid.appendChild(head);
+    }
+    for (const action of PAD_ACTIONS) {
+      const label = document.createElement("span");
+      label.textContent = action.label;
+      padGrid.appendChild(label);
+      ([0, 1] as const).forEach((padIndex) => {
+        const player = padIndex === 0 ? "p1" : "p2";
+        const btn = document.createElement("button");
+        btn.className = "key-btn";
+        btn.textContent = padButtonLabel(padBindings[player][action.key]);
+        btn.addEventListener("click", () => {
+          padCaptureCancel?.();
+          const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+          if (!pads[padIndex]) {
+            btn.textContent = "no pad";
+            setTimeout(() => (btn.textContent = padButtonLabel(padBindings[player][action.key])), 1200);
+            return;
+          }
+          btn.classList.add("listening");
+          btn.textContent = "press btn";
+          // Snapshot currently held buttons so we only react to a fresh press.
+          const initial = (pads[padIndex]!.buttons ?? []).map((b) => b.pressed);
+          let rafId = 0;
+          const deadline = performance.now() + 8000;
+          const stop = () => {
+            cancelAnimationFrame(rafId);
+            padCaptureCancel = null;
+            btn.classList.remove("listening");
+            btn.textContent = padButtonLabel(padBindings[player][action.key]);
+          };
+          padCaptureCancel = stop;
+          const tick = () => {
+            const pad = (navigator.getGamepads ? navigator.getGamepads() : [])[padIndex];
+            if (!pad || performance.now() > deadline) {
+              stop();
+              return;
+            }
+            for (let i = 0; i < pad.buttons.length; i++) {
+              if (pad.buttons[i].pressed && !initial[i]) {
+                padBindings[player][action.key] = i;
+                savePadBindings(padBindings);
+                stop();
+                rebuildPadGrid();
+                return;
+              }
+              initial[i] = pad.buttons[i].pressed;
+            }
+            rafId = requestAnimationFrame(tick);
+          };
+          rafId = requestAnimationFrame(tick);
+        });
+        padGrid.appendChild(btn);
+      });
+    }
+  }
+
   document.getElementById("opt-keys")!.addEventListener("click", () => {
     rebuildBindingsGrid();
+    rebuildPadGrid();
     setState("controls");
   });
-  document.getElementById("keys-back")!.addEventListener("click", () => setState("options"));
+  document.getElementById("keys-back")!.addEventListener("click", () => {
+    padCaptureCancel?.();
+    setState("options");
+  });
   document.getElementById("keys-reset")!.addEventListener("click", () => {
     Object.assign(bindings.p1, defaultP1Bindings());
     Object.assign(bindings.p2, defaultP2Bindings());
     saveBindings(bindings);
+    Object.assign(padBindings.p1, defaultPadBindings());
+    Object.assign(padBindings.p2, defaultPadBindings());
+    savePadBindings(padBindings);
     rebuildBindingsGrid();
+    rebuildPadGrid();
   });
 
   const toolButtons: Record<string, EditorTool> = {

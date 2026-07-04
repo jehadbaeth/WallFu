@@ -102,7 +102,7 @@
         margin-left: auto;
       }
 
-      #bindings-grid {
+      #bindings-grid, #pad-grid {
         display: grid;
         grid-template-columns: auto auto auto;
         gap: 6px 18px;
@@ -111,12 +111,12 @@
         overflow-y: auto;
         font-size: 16px;
       }
-      #bindings-grid .grid-head {
+      #bindings-grid .grid-head, #pad-grid .grid-head {
         font-weight: 700;
         color: #ffe14d;
         padding-bottom: 4px;
       }
-      #bindings-grid .key-btn {
+      #bindings-grid .key-btn, #pad-grid .key-btn {
         font-family: inherit;
         font-size: 15px;
         font-weight: 700;
@@ -127,8 +127,8 @@
         min-width: 70px;
         cursor: pointer;
       }
-      #bindings-grid .key-btn:hover { border-color: #2ee6ff; }
-      #bindings-grid .key-btn.listening {
+      #bindings-grid .key-btn:hover, #pad-grid .key-btn:hover { border-color: #2ee6ff; }
+      #bindings-grid .key-btn.listening, #pad-grid .key-btn.listening {
         background: #ffe14d;
         color: #000;
         border-color: #ffe14d;
@@ -191,8 +191,11 @@
     </div>
 
     <div id="controls" class="overlay">
-      <h1>Key Bindings</h1>
+      <h1>Bindings</h1>
+      <span style="color:#ffe14d;font-size:17px;font-weight:700">Keyboard</span>
       <div id="bindings-grid"></div>
+      <span style="color:#ffe14d;font-size:17px;font-weight:700">Gamepad (press a button on the pad to assign)</span>
+      <div id="pad-grid"></div>
       <div class="row">
         <button class="btn" id="keys-reset">Reset Defaults</button>
         <button class="btn" id="keys-back">Back</button>

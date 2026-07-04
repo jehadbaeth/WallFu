@@ -26,7 +26,7 @@ To anyone watching, two stick figures are fighting on your furniture.
 - **Wall-aware maps**: one-way platforms and solid walls, drawn in a built-in editor with save/load, JSON export/import, and optional background images.
 - **VS AI**: fight the computer at three difficulty levels with distinct reaction time, aggression, block rate, and mistake rate.
 - **Full presentation**: real impact sounds and an arcade announcer ("round one... FIGHT!", combo counts, "flawless victory"), particles, shockwaves, screen shake, hit-stop, KO slow motion, combo callouts.
-- **Input**: two players on one keyboard (fully rebindable in Options), plus standard gamepads (first pad is Player 1, second is Player 2).
+- **Input**: two players on one keyboard plus standard gamepads (first pad is Player 1, second is Player 2). Keyboard keys and gamepad buttons are both fully rebindable in Options.
 - **Runs anywhere**: fixed 1920x1080 virtual playfield letterboxed onto any display: monitor, TV, phone, or projector.
 
 ## Controls (defaults, rebindable in Options → Configure Keys)
