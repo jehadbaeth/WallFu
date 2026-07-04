@@ -12,6 +12,7 @@
         overflow: hidden;
         width: 100%;
         height: 100%;
+        font-family: "Courier New", monospace;
       }
       #app {
         width: 100vw;
@@ -20,10 +21,133 @@
       canvas {
         display: block;
       }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        color: #fff;
+        background: rgba(0, 0, 0, 0.72);
+        z-index: 10;
+      }
+      .overlay.visible {
+        display: flex;
+      }
+      .overlay h1 {
+        font-size: 56px;
+        letter-spacing: 6px;
+        margin: 0 0 10px 0;
+      }
+      .overlay h1 .cyan { color: #2ee6ff; }
+      .overlay h1 .magenta { color: #ff2e88; }
+
+      .btn {
+        font-family: inherit;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: #fff;
+        background: #111;
+        border: 3px solid #fff;
+        padding: 12px 28px;
+        cursor: pointer;
+        min-width: 260px;
+      }
+      .btn:hover { background: #2ee6ff; color: #000; }
+      .btn:active { background: #ff2e88; }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 18px;
+      }
+      .row .btn {
+        min-width: 44px;
+        padding: 6px 14px;
+        font-size: 18px;
+      }
+
+      #editor-toolbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: none;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.75);
+        border-bottom: 3px solid #fff;
+        z-index: 10;
+      }
+      #editor-toolbar.visible { display: flex; }
+      #editor-toolbar .btn {
+        min-width: unset;
+        padding: 8px 14px;
+        font-size: 14px;
+      }
+      #editor-toolbar .btn.active {
+        background: #ffe14d;
+        color: #000;
+      }
+      #editor-hint {
+        color: #aaa;
+        font-size: 13px;
+        margin-left: auto;
+      }
     </style>
   </head>
   <body>
     <div id="app"></div>
+
+    <div id="menu" class="overlay visible">
+      <h1><span class="cyan">Wall</span><span class="magenta">Fu</span></h1>
+      <button class="btn" id="menu-play">Play</button>
+      <button class="btn" id="menu-editor">Map Editor</button>
+      <button class="btn" id="menu-options">Options</button>
+    </div>
+
+    <div id="options" class="overlay">
+      <h1>Options</h1>
+      <div class="row">
+        <span>Rounds to win</span>
+        <button class="btn" id="opt-rounds-down">-</button>
+        <span id="opt-rounds-value">2</span>
+        <button class="btn" id="opt-rounds-up">+</button>
+      </div>
+      <div class="row">
+        <span>Screen shake</span>
+        <button class="btn" id="opt-shake-down">-</button>
+        <span id="opt-shake-value">100%</span>
+        <button class="btn" id="opt-shake-up">+</button>
+      </div>
+      <button class="btn" id="opt-fullscreen">Toggle Fullscreen</button>
+      <button class="btn" id="opt-back">Back</button>
+    </div>
+
+    <div id="editor-toolbar">
+      <button class="btn active" id="ed-tool-platform">Platform</button>
+      <button class="btn" id="ed-tool-wall">Wall</button>
+      <button class="btn" id="ed-tool-spawn1">P1 Spawn</button>
+      <button class="btn" id="ed-tool-spawn2">P2 Spawn</button>
+      <button class="btn" id="ed-tool-erase">Erase</button>
+      <button class="btn" id="ed-undo">Undo</button>
+      <button class="btn" id="ed-clear">Clear</button>
+      <button class="btn" id="ed-save">Save</button>
+      <button class="btn" id="ed-load">Load</button>
+      <button class="btn" id="ed-export">Export JSON</button>
+      <button class="btn" id="ed-import">Import JSON</button>
+      <button class="btn" id="ed-play">Play This Map</button>
+      <button class="btn" id="ed-back">Back to Menu</button>
+      <span id="editor-hint">Drag to draw. Click Erase then a shape to delete it.</span>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

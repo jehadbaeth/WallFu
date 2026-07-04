@@ -6,6 +6,9 @@ import { StickFigureView } from "./render/StickFigure";
 import { ParticleSystem } from "./effects/Particles";
 import { CameraShake } from "./effects/CameraShake";
 import { ShockRingSystem } from "./effects/ShockRing";
+import { type MapData, defaultMap, listSavedMaps, saveMapToStorage, loadMapFromStorage } from "./core/MapTypes";
+import { loadOptions, saveOptions } from "./core/Options";
+import { MapEditor, type EditorTool } from "./editor/MapEditor";
 
 const CYAN = 0x2ee6ff;
 const MAGENTA = 0xff2e88;
@@ -13,8 +16,9 @@ const WHITE = 0xffffff;
 const YELLOW = 0xffe14d;
 
 const FIXED_DT = 1 / 60;
-const ROUNDS_TO_WIN = 2;
 const KO_FREEZE_TIME = 1.4;
+
+type GameState = "menu" | "options" | "editor" | "fight";
 
 async function main() {
   const app = new Application();
@@ -25,26 +29,33 @@ async function main() {
   });
   document.getElementById("app")!.appendChild(app.canvas);
 
+  const options = loadOptions();
+
+  let currentMap: MapData = defaultMap(app.screen.width, app.screen.height);
+
   const world = new Container();
   app.stage.addChild(world);
 
-  const groundY = () => app.screen.height - 120;
-  const worldMinX = () => 0;
-  const worldMaxX = () => app.screen.width;
+  const editorLayer = new Container();
+  app.stage.addChild(editorLayer);
+  const mapEditor = new MapEditor(app, editorLayer, currentMap);
 
-  const floor = new Graphics();
-  world.addChild(floor);
-  function drawFloor() {
-    floor.clear();
-    floor.moveTo(0, groundY());
-    floor.lineTo(app.screen.width, groundY());
-    floor.stroke({ width: 5, color: WHITE, alpha: 0.9 });
+  const mapGeometry = new Graphics();
+  world.addChild(mapGeometry);
+  function drawMapGeometry() {
+    mapGeometry.clear();
+    for (const p of currentMap.platforms) {
+      mapGeometry.rect(p.x, p.y, p.w, p.h);
+      mapGeometry.fill({ color: WHITE, alpha: 0.9 });
+    }
+    for (const w of currentMap.walls) {
+      mapGeometry.rect(w.x, w.y, w.w, w.h);
+      mapGeometry.fill({ color: WHITE, alpha: 0.55 });
+      mapGeometry.rect(w.x, w.y, w.w, w.h);
+      mapGeometry.stroke({ width: 4, color: WHITE, alpha: 0.95 });
+    }
   }
-  drawFloor();
-  window.addEventListener("resize", () => {
-    drawFloor();
-    layoutUI();
-  });
+  drawMapGeometry();
 
   const particles = new ParticleSystem();
   world.addChild(particles.view);
@@ -53,18 +64,14 @@ async function main() {
   world.addChild(shockRings.view);
 
   const shake = new CameraShake();
+  function addShake(amount: number) {
+    shake.add(amount * options.shakeIntensity);
+  }
   let zoomPunch = 0;
   let zoomPunchVelocity = 0;
 
-  function startX1() {
-    return app.screen.width * 0.3;
-  }
-  function startX2() {
-    return app.screen.width * 0.7;
-  }
-
-  const player1 = new Fighter(startX1(), groundY());
-  const player2 = new Fighter(startX2(), groundY());
+  const player1 = new Fighter(currentMap.spawn1.x, currentMap.spawn1.y);
+  const player2 = new Fighter(currentMap.spawn2.x, currentMap.spawn2.y);
   player1.facing = 1;
   player2.facing = -1;
 
@@ -104,6 +111,14 @@ async function main() {
   koText.anchor.set(0.5);
   koText.visible = false;
   uiLayer.addChild(koText);
+
+  const matchOverHint = new Text({
+    text: "Press Enter for menu",
+    style: new TextStyle({ fontFamily: "monospace", fontSize: 20, fontWeight: "700", fill: WHITE, letterSpacing: 1 }),
+  });
+  matchOverHint.anchor.set(0.5);
+  matchOverHint.visible = false;
+  uiLayer.addChild(matchOverHint);
 
   const flashOverlay = new Graphics();
   uiLayer.addChild(flashOverlay);
@@ -157,6 +172,7 @@ async function main() {
     dotsLayer1.position.set(40, 64);
     dotsLayer2.position.set(app.screen.width - 40 - BAR_W, 64);
     koText.position.set(app.screen.width / 2, app.screen.height / 2 - 80);
+    matchOverHint.position.set(app.screen.width / 2, app.screen.height / 2 - 20);
     p1ComboText.position.set(40, 130);
     p2ComboText.position.set(app.screen.width - 40, 130);
     p1Controls.position.set(24, app.screen.height - 16);
@@ -167,6 +183,14 @@ async function main() {
   }
   layoutUI();
   flashOverlay.alpha = 0;
+
+  window.addEventListener("resize", () => {
+    layoutUI();
+    if (currentMap.name === "Flat Floor" && state !== "editor") {
+      currentMap = defaultMap(app.screen.width, app.screen.height);
+      drawMapGeometry();
+    }
+  });
 
   function drawHealthBar(bg: Graphics, fg: Graphics, health: number, maxHealth: number, color: number, rightAlign: boolean) {
     bg.clear();
@@ -188,7 +212,7 @@ async function main() {
 
   function drawRoundDots(layer: Container, wins: number) {
     layer.removeChildren();
-    for (let i = 0; i < ROUNDS_TO_WIN; i++) {
+    for (let i = 0; i < options.roundsToWin; i++) {
       const dot = new Graphics();
       dot.circle(i * 24 + 10, 10, 8);
       dot.fill({ color: i < wins ? YELLOW : 0x444444, alpha: 1 });
@@ -205,6 +229,7 @@ async function main() {
   let hitstopTimer = 0;
   let koFreezeTimer = 0;
   let koPending: "p1" | "p2" | null = null;
+  let matchOver = false;
   let p1RunDustTimer = 0;
   let p2RunDustTimer = 0;
   let p1DashStreakTimer = 0;
@@ -247,7 +272,7 @@ async function main() {
     if (ev.type === "land") {
       const t = Math.min(ev.impactSpeed / 1400, 1);
       particles.dustPuff(fighter.x, fighter.y, WHITE, Math.round(6 + t * 14));
-      if (t > 0.5) shake.add(0.25 * t);
+      if (t > 0.5) addShake(0.25 * t);
     } else if (ev.type === "jump" || ev.type === "airJump") {
       particles.dustPuff(fighter.x, fighter.y, color, 8);
     } else if (ev.type === "dash") {
@@ -258,7 +283,7 @@ async function main() {
         spread: 0.7,
         size: 5,
       });
-      shake.add(0.1);
+      addShake(0.1);
     } else if (ev.type === "attackActive") {
       const heavy = ev.kind === "heavy";
       const reach = heavy ? 68 : 58;
@@ -279,12 +304,12 @@ async function main() {
     if (blocked) {
       particles.burst(x, y, WHITE, heavy ? 14 : 8, { speed: 320, spread: Math.PI * 1.2, gravity: 200, size: 4, glow: true });
       shockRings.spawn(x, y, WHITE, heavy ? 70 : 45, 0.22, 4);
-      shake.add(heavy ? 0.18 : 0.08);
+      addShake(heavy ? 0.18 : 0.08);
     } else {
       particles.burst(x, y, YELLOW, heavy ? 30 : 18, { speed: heavy ? 560 : 400, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5, glow: true });
       particles.burst(x, y, WHITE, heavy ? 10 : 6, { speed: 220, spread: Math.PI * 2, gravity: 300, size: 3, glow: true });
       shockRings.spawn(x, y, heavy ? YELLOW : WHITE, heavy ? 130 : 70, heavy ? 0.4 : 0.24, heavy ? 8 : 5);
-      shake.add(heavy ? 0.55 : 0.3);
+      addShake(heavy ? 0.55 : 0.3);
       if (heavy) {
         screenFlash = 0.35;
         zoomPunch = 0.06;
@@ -296,8 +321,9 @@ async function main() {
   function beginRoundEnd(loser: "p1" | "p2") {
     koPending = loser;
     koFreezeTimer = KO_FREEZE_TIME;
+    koText.text = "K.O.";
     koText.visible = true;
-    shake.add(0.4);
+    addShake(0.4);
     zoomPunch = 0.12;
     zoomPunchVelocity = 0;
     const victim = loser === "p1" ? player1 : player2;
@@ -305,8 +331,8 @@ async function main() {
   }
 
   function resetRound() {
-    player1.reset(startX1(), groundY());
-    player2.reset(startX2(), groundY());
+    player1.reset(currentMap.spawn1.x, currentMap.spawn1.y);
+    player2.reset(currentMap.spawn2.x, currentMap.spawn2.y);
     player1.facing = 1;
     player2.facing = -1;
     koText.visible = false;
@@ -317,12 +343,173 @@ async function main() {
     p2ComboTimer = 0;
   }
 
+  function startMatch(map: MapData) {
+    currentMap = map;
+    drawMapGeometry();
+    p1Wins = 0;
+    p2Wins = 0;
+    matchOver = false;
+    matchOverHint.visible = false;
+    hitstopTimer = 0;
+    koFreezeTimer = 0;
+    zoomPunch = 0;
+    zoomPunchVelocity = 0;
+    screenFlash = 0;
+    drawRoundDots(dotsLayer1, p1Wins);
+    drawRoundDots(dotsLayer2, p2Wins);
+    resetRound();
+  }
+
   function updateComboText(text: Text, count: number) {
     text.text = count >= 2 ? `${count} HITS` : "";
   }
 
-  let accumulator = 0;
+  // --- Game state / menu / options / editor wiring ---
+  let state: GameState = "menu";
+  const menuEl = document.getElementById("menu")!;
+  const optionsEl = document.getElementById("options")!;
+  const editorToolbarEl = document.getElementById("editor-toolbar")!;
+
+  function setState(next: GameState) {
+    state = next;
+    menuEl.classList.toggle("visible", next === "menu");
+    optionsEl.classList.toggle("visible", next === "options");
+    editorToolbarEl.classList.toggle("visible", next === "editor");
+    world.visible = next === "fight";
+    uiLayer.visible = next === "fight";
+    if (next === "editor") mapEditor.activate(currentMap);
+    else mapEditor.deactivate();
+  }
+  setState("menu");
+
+  document.getElementById("menu-play")!.addEventListener("click", () => {
+    startMatch(currentMap);
+    setState("fight");
+  });
+  document.getElementById("menu-editor")!.addEventListener("click", () => setState("editor"));
+  document.getElementById("menu-options")!.addEventListener("click", () => {
+    refreshOptionsUI();
+    setState("options");
+  });
+
+  function refreshOptionsUI() {
+    document.getElementById("opt-rounds-value")!.textContent = String(options.roundsToWin);
+    document.getElementById("opt-shake-value")!.textContent = `${Math.round(options.shakeIntensity * 100)}%`;
+  }
+  document.getElementById("opt-rounds-down")!.addEventListener("click", () => {
+    options.roundsToWin = Math.max(1, options.roundsToWin - 1);
+    saveOptions(options);
+    refreshOptionsUI();
+  });
+  document.getElementById("opt-rounds-up")!.addEventListener("click", () => {
+    options.roundsToWin = Math.min(9, options.roundsToWin + 1);
+    saveOptions(options);
+    refreshOptionsUI();
+  });
+  document.getElementById("opt-shake-down")!.addEventListener("click", () => {
+    options.shakeIntensity = Math.max(0, +(options.shakeIntensity - 0.25).toFixed(2));
+    saveOptions(options);
+    refreshOptionsUI();
+  });
+  document.getElementById("opt-shake-up")!.addEventListener("click", () => {
+    options.shakeIntensity = Math.min(2, +(options.shakeIntensity + 0.25).toFixed(2));
+    saveOptions(options);
+    refreshOptionsUI();
+  });
+  document.getElementById("opt-fullscreen")!.addEventListener("click", () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    else document.exitFullscreen().catch(() => {});
+  });
+  document.getElementById("opt-back")!.addEventListener("click", () => setState("menu"));
+
+  const toolButtons: Record<string, EditorTool> = {
+    "ed-tool-platform": "platform",
+    "ed-tool-wall": "wall",
+    "ed-tool-spawn1": "spawn1",
+    "ed-tool-spawn2": "spawn2",
+    "ed-tool-erase": "erase",
+  };
+  for (const [id, tool] of Object.entries(toolButtons)) {
+    const btn = document.getElementById(id)!;
+    btn.addEventListener("click", () => {
+      mapEditor.setTool(tool);
+      for (const otherId of Object.keys(toolButtons)) {
+        document.getElementById(otherId)!.classList.toggle("active", otherId === id);
+      }
+    });
+  }
+  document.getElementById("ed-undo")!.addEventListener("click", () => mapEditor.undo());
+  document.getElementById("ed-clear")!.addEventListener("click", () => {
+    if (confirm("Clear all shapes on this map?")) mapEditor.clear();
+  });
+  document.getElementById("ed-save")!.addEventListener("click", () => {
+    const current = mapEditor.getMap();
+    const name = prompt("Save map as:", current.name || "My Map");
+    if (!name) return;
+    current.name = name;
+    saveMapToStorage(current);
+    mapEditor.setMap(current);
+  });
+  document.getElementById("ed-load")!.addEventListener("click", () => {
+    const names = listSavedMaps();
+    if (!names.length) {
+      alert("No saved maps yet.");
+      return;
+    }
+    const name = prompt(`Load which map?\n${names.join("\n")}`, names[0]);
+    if (!name) return;
+    const map = loadMapFromStorage(name);
+    if (!map) {
+      alert("Map not found.");
+      return;
+    }
+    mapEditor.setMap(map);
+  });
+  document.getElementById("ed-export")!.addEventListener("click", () => {
+    const map = mapEditor.getMap();
+    const blob = new Blob([JSON.stringify(map, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${map.name || "wallfu-map"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById("ed-import")!.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      file.text().then((text) => {
+        try {
+          const map = JSON.parse(text) as MapData;
+          mapEditor.setMap(map);
+        } catch {
+          alert("Invalid map file.");
+        }
+      });
+    });
+    input.click();
+  });
+  document.getElementById("ed-play")!.addEventListener("click", () => {
+    startMatch(mapEditor.getMap());
+    setState("fight");
+  });
+  document.getElementById("ed-back")!.addEventListener("click", () => setState("menu"));
+
+  window.addEventListener("keydown", (e) => {
+    if (state === "fight" && e.code === "Escape" && !matchOver) {
+      setState("menu");
+    } else if (matchOver && (e.code === "Enter" || e.code === "Escape")) {
+      setState("menu");
+    }
+  });
+
   app.ticker.add((ticker) => {
+    if (state !== "fight" || matchOver) return;
+
     const frameDt = Math.min(ticker.deltaMS / 1000, 0.1);
 
     if (koFreezeTimer > 0) {
@@ -332,18 +519,25 @@ async function main() {
         else p1Wins++;
         drawRoundDots(dotsLayer1, p1Wins);
         drawRoundDots(dotsLayer2, p2Wins);
-        resetRound();
+        if (p1Wins >= options.roundsToWin || p2Wins >= options.roundsToWin) {
+          koText.text = p1Wins > p2Wins ? "P1 WINS!" : "P2 WINS!";
+          koText.visible = true;
+          matchOverHint.visible = true;
+          matchOver = true;
+        } else {
+          resetRound();
+        }
       }
     } else if (hitstopTimer > 0) {
       hitstopTimer -= frameDt;
     } else {
-      accumulator += frameDt;
+      let accumulator = frameDt;
 
       while (accumulator >= FIXED_DT) {
         const intent1 = player1Input.poll();
         const intent2 = player2Input.poll();
-        player1.update(FIXED_DT, intent1, groundY(), worldMinX(), worldMaxX());
-        player2.update(FIXED_DT, intent2, groundY(), worldMinX(), worldMaxX());
+        player1.update(FIXED_DT, intent1, currentMap);
+        player2.update(FIXED_DT, intent2, currentMap);
 
         for (const ev of player1.events) handleMovementEvent(player1, ev);
         for (const ev of player2.events) handleMovementEvent(player2, ev);
