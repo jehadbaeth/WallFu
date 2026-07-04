@@ -13,6 +13,8 @@ export interface MapData {
   walls: Rect[];
   spawn1: { x: number; y: number };
   spawn2: { x: number; y: number };
+  /** Optional background image as a data URL, stretched across the arena. */
+  backgroundImage?: string;
 }
 
 export function defaultMap(width: number, height: number): MapData {
@@ -52,6 +54,7 @@ export function fitMapTo(map: MapData, width: number, height: number): MapData {
     walls: map.walls.map(scaleRect),
     spawn1: { x: map.spawn1.x * sx, y: map.spawn1.y * sy },
     spawn2: { x: map.spawn2.x * sx, y: map.spawn2.y * sy },
+    backgroundImage: map.backgroundImage,
   };
 }
 
@@ -64,6 +67,7 @@ export function cloneMap(map: MapData): MapData {
     walls: map.walls.map((r) => ({ ...r })),
     spawn1: { ...map.spawn1 },
     spawn2: { ...map.spawn2 },
+    backgroundImage: map.backgroundImage,
   };
 }
 

@@ -15,31 +15,79 @@ export interface KeyBindings {
 }
 
 // MK3-style button grid: punches on the top row, kicks below them.
-export const P1_BINDINGS: KeyBindings = {
-  left: "KeyA",
-  right: "KeyD",
-  jump: "KeyW",
-  fastFall: "KeyS",
-  highPunch: "KeyF",
-  lowPunch: "KeyV",
-  highKick: "KeyG",
-  lowKick: "KeyB",
-  block: "KeyH",
-  dash: "KeyJ",
-};
+export function defaultP1Bindings(): KeyBindings {
+  return {
+    left: "KeyA",
+    right: "KeyD",
+    jump: "KeyW",
+    fastFall: "KeyS",
+    highPunch: "KeyF",
+    lowPunch: "KeyV",
+    highKick: "KeyG",
+    lowKick: "KeyB",
+    block: "KeyH",
+    dash: "KeyJ",
+  };
+}
 
-export const P2_BINDINGS: KeyBindings = {
-  left: "ArrowLeft",
-  right: "ArrowRight",
-  jump: "ArrowUp",
-  fastFall: "ArrowDown",
-  highPunch: "Numpad4",
-  lowPunch: "Numpad1",
-  highKick: "Numpad5",
-  lowKick: "Numpad2",
-  block: "Numpad6",
-  dash: "Numpad3",
-};
+export function defaultP2Bindings(): KeyBindings {
+  return {
+    left: "ArrowLeft",
+    right: "ArrowRight",
+    jump: "ArrowUp",
+    fastFall: "ArrowDown",
+    highPunch: "Numpad4",
+    lowPunch: "Numpad1",
+    highKick: "Numpad5",
+    lowKick: "Numpad2",
+    block: "Numpad6",
+    dash: "Numpad3",
+  };
+}
+
+/** Action list with labels, in the order shown by the key-binding UI. */
+export const BINDING_ACTIONS: Array<{ key: keyof KeyBindings; label: string }> = [
+  { key: "left", label: "Move Left" },
+  { key: "right", label: "Move Right" },
+  { key: "jump", label: "Jump" },
+  { key: "fastFall", label: "Down / Fast-Fall" },
+  { key: "highPunch", label: "High Punch" },
+  { key: "lowPunch", label: "Low Punch" },
+  { key: "highKick", label: "High Kick" },
+  { key: "lowKick", label: "Low Kick" },
+  { key: "block", label: "Block" },
+  { key: "dash", label: "Dash" },
+];
+
+const BINDINGS_STORAGE_KEY = "wallfu.keybindings";
+
+export function loadBindings(): { p1: KeyBindings; p2: KeyBindings } {
+  const result = { p1: defaultP1Bindings(), p2: defaultP2Bindings() };
+  try {
+    const raw = localStorage.getItem(BINDINGS_STORAGE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw) as { p1?: Partial<KeyBindings>; p2?: Partial<KeyBindings> };
+      Object.assign(result.p1, saved.p1);
+      Object.assign(result.p2, saved.p2);
+    }
+  } catch {
+    // ignore malformed storage
+  }
+  return result;
+}
+
+export function saveBindings(bindings: { p1: KeyBindings; p2: KeyBindings }): void {
+  localStorage.setItem(BINDINGS_STORAGE_KEY, JSON.stringify(bindings));
+}
+
+/** Human-readable key name for the binding UI, e.g. "KeyA" -> "A", "Numpad4" -> "Num4". */
+export function keyLabel(code: string): string {
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("Numpad")) return "Num" + code.slice(6);
+  if (code.startsWith("Arrow")) return { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓" }[code] ?? code;
+  return code;
+}
 
 const heldKeys = new Set<string>();
 

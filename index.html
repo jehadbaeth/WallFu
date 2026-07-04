@@ -102,6 +102,38 @@
         margin-left: auto;
       }
 
+      #bindings-grid {
+        display: grid;
+        grid-template-columns: auto auto auto;
+        gap: 6px 18px;
+        align-items: center;
+        max-height: 60vh;
+        overflow-y: auto;
+        font-size: 16px;
+      }
+      #bindings-grid .grid-head {
+        font-weight: 700;
+        color: #ffe14d;
+        padding-bottom: 4px;
+      }
+      #bindings-grid .key-btn {
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 700;
+        color: #fff;
+        background: #111;
+        border: 2px solid #888;
+        padding: 4px 12px;
+        min-width: 70px;
+        cursor: pointer;
+      }
+      #bindings-grid .key-btn:hover { border-color: #2ee6ff; }
+      #bindings-grid .key-btn.listening {
+        background: #ffe14d;
+        color: #000;
+        border-color: #ffe14d;
+      }
+
       /* Small screens: tighter menus so everything stays on screen. */
       @media (max-width: 700px), (max-height: 500px) {
         .overlay { gap: 10px; }
@@ -149,8 +181,18 @@
         <span id="opt-ai-value">Medium</span>
         <button class="btn" id="opt-ai-up">+</button>
       </div>
+      <button class="btn" id="opt-keys">Configure Keys</button>
       <button class="btn" id="opt-fullscreen">Toggle Fullscreen</button>
       <button class="btn" id="opt-back">Back</button>
+    </div>
+
+    <div id="controls" class="overlay">
+      <h1>Key Bindings</h1>
+      <div id="bindings-grid"></div>
+      <div class="row">
+        <button class="btn" id="keys-reset">Reset Defaults</button>
+        <button class="btn" id="keys-back">Back</button>
+      </div>
     </div>
 
     <div id="editor-toolbar">
@@ -161,6 +203,8 @@
       <button class="btn" id="ed-tool-erase">Erase</button>
       <button class="btn" id="ed-undo">Undo</button>
       <button class="btn" id="ed-clear">Clear</button>
+      <button class="btn" id="ed-bg">Background</button>
+      <button class="btn" id="ed-bg-clear">Clear BG</button>
       <button class="btn" id="ed-save">Save</button>
       <button class="btn" id="ed-load">Load</button>
       <button class="btn" id="ed-export">Export JSON</button>

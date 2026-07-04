@@ -1,6 +1,7 @@
 import { Application, Container, Graphics } from "pixi.js";
 import type { MapData, Rect } from "../core/MapTypes";
 import { cloneMap } from "../core/MapTypes";
+import { applyBackground } from "../render/BackgroundLoader";
 
 export type EditorTool = "platform" | "wall" | "spawn1" | "spawn2" | "erase";
 
@@ -11,6 +12,7 @@ const MAGENTA = 0xff2e88;
 export class MapEditor {
   private app: Application;
   private layer = new Container();
+  private bgLayer = new Container();
   private g = new Graphics();
   private map: MapData;
   private tool: EditorTool = "platform";
@@ -27,6 +29,7 @@ export class MapEditor {
     this.app = app;
     this.map = cloneMap(initialMap);
     this.toWorld = toWorld ?? ((x, y) => ({ x, y }));
+    this.layer.addChild(this.bgLayer);
     this.layer.addChild(this.g);
     parent.addChild(this.layer);
     this.layer.visible = false;
@@ -144,6 +147,7 @@ export class MapEditor {
   }
 
   private redraw(): void {
+    applyBackground(this.bgLayer, this.map.backgroundImage, this.map.width, this.map.height, 0.6);
     this.g.clear();
 
     for (const p of this.map.platforms) {

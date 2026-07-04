@@ -2,7 +2,16 @@ import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
 import { Fighter, type FighterEvent } from "./core/Fighter";
 import { resolveCombat, isHeavyKind, isKickKind, ATTACKS, type AttackKind } from "./core/Combat";
 import { AIController, AI_DIFFICULTIES } from "./core/AIController";
-import { KeyboardIntentSource, P1_BINDINGS, P2_BINDINGS } from "./core/KeyboardInput";
+import {
+  KeyboardIntentSource,
+  BINDING_ACTIONS,
+  defaultP1Bindings,
+  defaultP2Bindings,
+  keyLabel,
+  loadBindings,
+  saveBindings,
+} from "./core/KeyboardInput";
+import { applyBackground, fileToBackgroundDataUrl } from "./render/BackgroundLoader";
 import { GamepadIntentSource, mergeIntents } from "./core/GamepadInput";
 import { StickFigureView } from "./render/StickFigure";
 import { ParticleSystem } from "./effects/Particles";
@@ -26,7 +35,7 @@ const KO_FREEZE_TIME = 1.0;
 const VIRTUAL_W = 1920;
 const VIRTUAL_H = 1080;
 
-type GameState = "menu" | "options" | "editor" | "fight";
+type GameState = "menu" | "options" | "controls" | "editor" | "fight";
 
 async function main() {
   const app = new Application();
@@ -63,9 +72,12 @@ async function main() {
     y: (y - viewport.position.y) / viewport.scale.y,
   }));
 
+  const bgLayer = new Container();
+  world.addChild(bgLayer);
   const mapGeometry = new Graphics();
   world.addChild(mapGeometry);
   function drawMapGeometry() {
+    applyBackground(bgLayer, currentMap.backgroundImage, VIRTUAL_W, VIRTUAL_H);
     mapGeometry.clear();
     for (const p of currentMap.platforms) {
       mapGeometry.rect(p.x, p.y, p.w, p.h);
@@ -98,8 +110,9 @@ async function main() {
   player1.facing = 1;
   player2.facing = -1;
 
-  const player1Input = new KeyboardIntentSource(P1_BINDINGS);
-  const player2Input = new KeyboardIntentSource(P2_BINDINGS);
+  const bindings = loadBindings();
+  const player1Input = new KeyboardIntentSource(bindings.p1);
+  const player2Input = new KeyboardIntentSource(bindings.p2);
   const player1Gamepad = new GamepadIntentSource(0);
   const player2Gamepad = new GamepadIntentSource(1);
   let aiController: AIController | null = null; // non-null while in a vs-AI match
@@ -148,6 +161,47 @@ async function main() {
 
   const flashOverlay = new Graphics();
   uiLayer.addChild(flashOverlay);
+
+  // --- Announcement popups (FIGHT!, FIRST BLOOD, combos...) ---
+  const announceStyle = new TextStyle({
+    fontFamily: "monospace",
+    fontSize: 84,
+    fontWeight: "900",
+    fill: WHITE,
+    letterSpacing: 8,
+    stroke: { color: 0x000000, width: 8 },
+  });
+  const announceText = new Text({ text: "", style: announceStyle });
+  announceText.anchor.set(0.5);
+  announceText.visible = false;
+  announceText.position.set(VIRTUAL_W / 2, VIRTUAL_H * 0.32);
+  uiLayer.addChild(announceText);
+  let announceTimer = 0;
+  let announceScale = 1;
+  let announceScaleVel = 0;
+
+  function announce(message: string, color = YELLOW, excitement = 1) {
+    announceText.text = message;
+    announceText.tint = color;
+    announceText.visible = true;
+    announceText.alpha = 1;
+    announceTimer = 1.25;
+    announceScale = 2.6;
+    announceScaleVel = 0;
+    sound.announce(excitement);
+  }
+
+  function updateAnnouncement(dt: number) {
+    if (!announceText.visible) return;
+    // Spring the scale down from the pop-in size.
+    const accel = (1 - announceScale) * 160 - announceScaleVel * 14;
+    announceScaleVel += accel * dt;
+    announceScale += announceScaleVel * dt;
+    announceText.scale.set(announceScale);
+    announceTimer -= dt;
+    if (announceTimer < 0.3) announceText.alpha = Math.max(0, announceTimer / 0.3);
+    if (announceTimer <= 0) announceText.visible = false;
+  }
   let screenFlash = 0;
 
   const comboStyle = new TextStyle({
@@ -251,6 +305,8 @@ async function main() {
   let koFreezeTimer = 0;
   let koPending: "p1" | "p2" | null = null;
   let matchOver = false;
+  let firstBloodDone = false;
+  let finishHimDone = false;
   let p1RunDustTimer = 0;
   let p2RunDustTimer = 0;
   let p1DashStreakTimer = 0;
@@ -352,7 +408,7 @@ async function main() {
     }
   }
 
-  function spawnHitEffect(x: number, y: number, blocked: boolean, heavy: boolean, dirX: number, kind: AttackKind) {
+  function spawnHitEffect(x: number, y: number, blocked: boolean, heavy: boolean, dirX: number, kind: AttackKind, defenderAirborne = false) {
     sound.hit(heavy, blocked, isKickKind(kind));
     if (blocked) {
       particles.burst(x, y, WHITE, heavy ? 18 : 10, { speed: 340, spread: Math.PI * 1.2, gravity: 200, size: 4, glow: true });
@@ -372,6 +428,11 @@ async function main() {
       // Rising column to sell the launch.
       particles.streakBurst(x, y - 30, YELLOW, 10, { angle: -Math.PI / 2, speed: 700, spread: 0.5, size: 5 });
       shockRings.spawn(x, y - 60, YELLOW, 110, 0.35, 6);
+    }
+    if (defenderAirborne) {
+      // Juggle hit: extra scatter to sell keeping them airborne.
+      particles.streakBurst(x, y, YELLOW, 8, { angle: -Math.PI / 2, speed: 520, spread: 2.4, size: 4 });
+      shockRings.spawn(x, y, WHITE, 60, 0.2, 4);
     }
     addShake(heavy ? 0.65 : 0.38);
     screenFlash = heavy ? 0.35 : 0.12;
@@ -403,7 +464,9 @@ async function main() {
     p1ComboTimer = 0;
     p2ComboCount = 0;
     p2ComboTimer = 0;
+    finishHimDone = false;
     aiController?.reset();
+    announce("FIGHT!", YELLOW, 1.2);
   }
 
   function startMatch(map: MapData) {
@@ -412,6 +475,7 @@ async function main() {
     p1Wins = 0;
     p2Wins = 0;
     matchOver = false;
+    firstBloodDone = false;
     matchOverHint.visible = false;
     hitstopTimer = 0;
     koFreezeTimer = 0;
@@ -431,12 +495,14 @@ async function main() {
   let state: GameState = "menu";
   const menuEl = document.getElementById("menu")!;
   const optionsEl = document.getElementById("options")!;
+  const controlsEl = document.getElementById("controls")!;
   const editorToolbarEl = document.getElementById("editor-toolbar")!;
 
   function setState(next: GameState) {
     state = next;
     menuEl.classList.toggle("visible", next === "menu");
     optionsEl.classList.toggle("visible", next === "options");
+    controlsEl.classList.toggle("visible", next === "controls");
     editorToolbarEl.classList.toggle("visible", next === "editor");
     world.visible = next === "fight";
     uiLayer.visible = next === "fight";
@@ -517,6 +583,62 @@ async function main() {
   });
   document.getElementById("opt-back")!.addEventListener("click", () => setState("menu"));
 
+  // --- Key binding configuration ---
+  const bindingsGrid = document.getElementById("bindings-grid")!;
+  let listeningButton: HTMLButtonElement | null = null;
+
+  function rebuildBindingsGrid() {
+    bindingsGrid.innerHTML = "";
+    for (const text of ["Action", "Player 1", "Player 2"]) {
+      const head = document.createElement("span");
+      head.className = "grid-head";
+      head.textContent = text;
+      bindingsGrid.appendChild(head);
+    }
+    for (const action of BINDING_ACTIONS) {
+      const label = document.createElement("span");
+      label.textContent = action.label;
+      bindingsGrid.appendChild(label);
+      for (const player of ["p1", "p2"] as const) {
+        const btn = document.createElement("button");
+        btn.className = "key-btn";
+        btn.textContent = keyLabel(bindings[player][action.key]);
+        btn.addEventListener("click", () => {
+          if (listeningButton) listeningButton.classList.remove("listening");
+          listeningButton = btn;
+          btn.classList.add("listening");
+          btn.textContent = "press key";
+          const onKey = (e: KeyboardEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.removeEventListener("keydown", onKey, true);
+            btn.classList.remove("listening");
+            listeningButton = null;
+            if (e.code !== "Escape") {
+              bindings[player][action.key] = e.code;
+              saveBindings(bindings);
+            }
+            rebuildBindingsGrid();
+          };
+          window.addEventListener("keydown", onKey, true);
+        });
+        bindingsGrid.appendChild(btn);
+      }
+    }
+  }
+
+  document.getElementById("opt-keys")!.addEventListener("click", () => {
+    rebuildBindingsGrid();
+    setState("controls");
+  });
+  document.getElementById("keys-back")!.addEventListener("click", () => setState("options"));
+  document.getElementById("keys-reset")!.addEventListener("click", () => {
+    Object.assign(bindings.p1, defaultP1Bindings());
+    Object.assign(bindings.p2, defaultP2Bindings());
+    saveBindings(bindings);
+    rebuildBindingsGrid();
+  });
+
   const toolButtons: Record<string, EditorTool> = {
     "ed-tool-platform": "platform",
     "ed-tool-wall": "wall",
@@ -542,7 +664,12 @@ async function main() {
     const name = prompt("Save map as:", current.name || "My Map");
     if (!name) return;
     current.name = name;
-    saveMapToStorage(current);
+    try {
+      saveMapToStorage(current);
+    } catch {
+      alert("Could not save: browser storage is full. Try a smaller background image or export to JSON instead.");
+      return;
+    }
     mapEditor.setMap(current);
   });
   document.getElementById("ed-load")!.addEventListener("click", () => {
@@ -559,6 +686,28 @@ async function main() {
       return;
     }
     mapEditor.setMap(fitMapTo(map, VIRTUAL_W, VIRTUAL_H));
+  });
+  document.getElementById("ed-bg")!.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      fileToBackgroundDataUrl(file, VIRTUAL_W, VIRTUAL_H)
+        .then((url) => {
+          const map = mapEditor.getMap();
+          map.backgroundImage = url;
+          mapEditor.setMap(map);
+        })
+        .catch(() => alert("Could not load that image."));
+    });
+    input.click();
+  });
+  document.getElementById("ed-bg-clear")!.addEventListener("click", () => {
+    const map = mapEditor.getMap();
+    delete map.backgroundImage;
+    mapEditor.setMap(map);
   });
   document.getElementById("ed-export")!.addEventListener("click", () => {
     const map = mapEditor.getMap();
@@ -654,9 +803,13 @@ async function main() {
         const hits = resolveCombat(player1, player2);
         for (const hit of hits) {
           const dirX = Math.sign(hit.defender.x - hit.attacker.x) || hit.attacker.facing;
-          spawnHitEffect(hit.x, hit.y, hit.blocked, isHeavyKind(hit.kind), dirX, hit.kind);
+          spawnHitEffect(hit.x, hit.y, hit.blocked, isHeavyKind(hit.kind), dirX, hit.kind, !hit.defender.grounded);
           hitstopTimer = Math.max(hitstopTimer, hit.hitstop);
           if (!hit.blocked) {
+            if (!firstBloodDone) {
+              firstBloodDone = true;
+              announce("FIRST BLOOD!", 0xff3344, 1.1);
+            }
             let combo: number;
             if (hit.attacker === player1) {
               combo = ++p1ComboCount;
@@ -674,6 +827,14 @@ async function main() {
           }
         }
 
+        if (!finishHimDone && !koPending && !matchOver) {
+          const nearDeath = (player1.health > 0 && player1.health <= 18) || (player2.health > 0 && player2.health <= 18);
+          if (nearDeath) {
+            finishHimDone = true;
+            announce("FINISH THEM!", 0xff3344, 1.3);
+          }
+        }
+
         if (player1.koed && !koPending) beginRoundEnd("p1");
         if (player2.koed && !koPending) beginRoundEnd("p2");
 
@@ -682,11 +843,17 @@ async function main() {
 
       if (p1ComboTimer > 0) {
         p1ComboTimer -= frameDt;
-        if (p1ComboTimer <= 0) p1ComboCount = 0;
+        if (p1ComboTimer <= 0) {
+          if (p1ComboCount >= 3) announce(`${p1ComboCount} HIT COMBO!`, CYAN, 1 + p1ComboCount * 0.05);
+          p1ComboCount = 0;
+        }
       }
       if (p2ComboTimer > 0) {
         p2ComboTimer -= frameDt;
-        if (p2ComboTimer <= 0) p2ComboCount = 0;
+        if (p2ComboTimer <= 0) {
+          if (p2ComboCount >= 3) announce(`${p2ComboCount} HIT COMBO!`, MAGENTA, 1 + p2ComboCount * 0.05);
+          p2ComboCount = 0;
+        }
       }
     }
 
@@ -695,6 +862,7 @@ async function main() {
 
     screenFlash = Math.max(0, screenFlash - frameDt * 3.5);
     flashOverlay.alpha = screenFlash;
+    updateAnnouncement(frameDt);
 
     player1View.update(player1, frameDt);
     player2View.update(player2, frameDt);
