@@ -388,6 +388,10 @@ async function main() {
   let hitstopTimer = 0;
   let koFreezeTimer = 0;
   let koPending: "p1" | "p2" | null = null;
+  let koVictim: Fighter | null = null; // camera zooms onto them during the KO close-up
+  let camX = VIRTUAL_W / 2;
+  let camY = VIRTUAL_H / 2;
+  let camZoom = 1;
   let matchOver = false;
   let firstBloodDone = false;
   let finishHimDone = false;
@@ -574,6 +578,7 @@ async function main() {
     zoomPunch = 0.12;
     zoomPunchVelocity = 0;
     const victim = loser === "p1" ? player1 : player2;
+    koVictim = victim;
     shockRings.spawn(victim.x, victim.y - 60, WHITE, 180, 0.5, 10);
     impactFrame(victim.x, victim.y - 60, true);
     if (label === "TIME!") {
@@ -603,6 +608,7 @@ async function main() {
     player2.facing = -1;
     koText.visible = false;
     koPending = null;
+    koVictim = null;
     p1ComboCount = 0;
     p1ComboTimer = 0;
     p2ComboCount = 0;
@@ -638,6 +644,9 @@ async function main() {
     zoomPunch = 0;
     zoomPunchVelocity = 0;
     screenFlash = 0;
+    camX = VIRTUAL_W / 2;
+    camY = VIRTUAL_H / 2;
+    camZoom = 1;
     drawRoundDots(dotsLayer1, p1Wins);
     drawRoundDots(dotsLayer2, p2Wins);
     resetRound();
@@ -1144,8 +1153,9 @@ async function main() {
         }
       }
     } else if (hitstopTimer > 0) {
+      // OFDP-style hit beat: not a hard freeze but an ultra slow-mo frame of the action.
       hitstopTimer -= frameDt;
-      simDt = 0;
+      simDt = frameDt * 0.08;
     }
 
     {
@@ -1289,13 +1299,21 @@ async function main() {
     zoomPunchVelocity += zoomAccel * frameDt;
     zoomPunch += zoomPunchVelocity * frameDt;
 
+    // Camera: normally centered; during a KO it dives toward the loser for the
+    // OFDP-style kill close-up while the slow-mo plays.
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const focusTX = koVictim ? clamp(koVictim.x, VIRTUAL_W * 0.28, VIRTUAL_W * 0.72) : VIRTUAL_W / 2;
+    const focusTY = koVictim ? clamp(koVictim.y - 90, VIRTUAL_H * 0.3, VIRTUAL_H * 0.72) : VIRTUAL_H / 2;
+    const zoomTarget = koVictim ? 1.4 : 1;
+    const camK = 1 - Math.exp(-frameDt * 5);
+    camX += (focusTX - camX) * camK;
+    camY += (focusTY - camY) * camK;
+    camZoom += (zoomTarget - camZoom) * camK;
+
     const offset = shake.update(frameDt);
-    const scale = 1 + zoomPunch;
+    const scale = (1 + zoomPunch) * camZoom;
     world.scale.set(scale);
-    world.position.set(
-      offset.x + (VIRTUAL_W / 2) * (1 - scale),
-      offset.y + (VIRTUAL_H / 2) * (1 - scale),
-    );
+    world.position.set(offset.x + VIRTUAL_W / 2 - camX * scale, offset.y + VIRTUAL_H / 2 - camY * scale);
   });
 }
 

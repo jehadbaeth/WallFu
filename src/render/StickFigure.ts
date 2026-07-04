@@ -33,6 +33,7 @@ export class StickFigureView {
   private stretchYVelocity = 0;
   private tumble = 0; // spin while flying from a big hit
   private pose: Pose | null = null; // blended display pose
+  private attackVariant = 0; // rerolled each strike so repeats look different
 
   constructor(color: number) {
     this.color = color;
@@ -70,7 +71,9 @@ export class StickFigureView {
     this.stretchY += this.stretchYVelocity * dt;
 
     for (const ev of fighter.events) {
-      if (ev.type === "jump") {
+      if (ev.type === "attackStart") {
+        this.attackVariant = Math.floor(Math.random() * 16);
+      } else if (ev.type === "jump") {
         this.squash = 1.35;
         this.squashVelocity = 0;
       } else if (ev.type === "airJump") {
@@ -180,6 +183,7 @@ export class StickFigureView {
       attackExt,
       this.knockLean,
       wallSliding,
+      this.attackVariant,
     );
     // Blend toward the target pose so limbs flow between states instead of teleporting.
     // Strikes blend fast to keep the chamber/snap punch.

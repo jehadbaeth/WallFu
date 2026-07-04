@@ -38,22 +38,48 @@ export interface AttackPoseConfig {
 
 // Positive swings reach forward (toward facing). torsoLean is real pitch now:
 // 1.0 rad drops the head near hip height.
-export const ATTACK_POSES: Record<AttackKind, AttackPoseConfig> = {
-  // Punches: One Finger Death Punch style deep lunge, body committed behind the fist.
-  lowPunch: { lean: 0.2, leanGain: 0.08, armBase: 0.4, armReach: 1.2, backArm: -0.5, frontLeg: 0.55, frontLegBend: 0.3, backLeg: -0.7, backLegBend: 0.05, crouch: 0.1 },
-  highPunch: { lean: 0.3, leanGain: 0.12, armBase: 0.4, armReach: 1.7, backArm: -0.7, frontLeg: 0.7, frontLegBend: 0.35, backLeg: -0.85, backLegBend: 0.05, crouch: 0.12 },
-  // Sweep: deep crouch, leg scythes along the ground.
-  lowKick: { lean: 0.55, leanGain: 0.1, armBase: -0.3, armReach: -0.3, backArm: -0.5, frontLeg: 1.15, frontLegBend: 0.05, backLeg: -0.3, backLegBend: 0.55, crouch: 0.45 },
+// Every attack has multiple pose variants, picked randomly per strike so
+// repeated hits never look identical (One Finger Death Punch style).
+export const ATTACK_POSES: Record<AttackKind, AttackPoseConfig[]> = {
+  lowPunch: [
+    // Straight jab off a lunge.
+    { lean: 0.2, leanGain: 0.08, armBase: 0.4, armReach: 1.2, backArm: -0.5, frontLeg: 0.55, frontLegBend: 0.3, backLeg: -0.7, backLegBend: 0.05, crouch: 0.1 },
+    // Rising backfist, more upright.
+    { lean: 0.08, leanGain: 0.08, armBase: 0.9, armReach: 1.1, backArm: -0.3, frontLeg: 0.35, frontLegBend: 0.2, backLeg: -0.45, backLegBend: 0.1, crouch: 0.06 },
+    // Short body hook from a crouch.
+    { lean: 0.36, leanGain: 0.08, armBase: 0.2, armReach: 1.0, backArm: -0.6, frontLeg: 0.6, frontLegBend: 0.4, backLeg: -0.55, backLegBend: 0.08, crouch: 0.2 },
+  ],
+  highPunch: [
+    // Long cross, full commitment.
+    { lean: 0.3, leanGain: 0.12, armBase: 0.4, armReach: 1.7, backArm: -0.7, frontLeg: 0.7, frontLegBend: 0.35, backLeg: -0.85, backLegBend: 0.05, crouch: 0.12 },
+    // Overhead hammer blow arcing down.
+    { lean: 0.42, leanGain: 0.1, armBase: 2.3, armReach: -0.9, backArm: -0.8, frontLeg: 0.55, frontLegBend: 0.3, backLeg: -0.7, backLegBend: 0.06, crouch: 0.14 },
+    // Rising uppercut-style straight.
+    { lean: 0.12, leanGain: 0.1, armBase: 0.6, armReach: 1.6, backArm: -0.5, frontLeg: 0.4, frontLegBend: 0.25, backLeg: -0.75, backLegBend: 0.05, crouch: 0.18 },
+  ],
+  lowKick: [
+    // Deep crouch sweep along the ground.
+    { lean: 0.55, leanGain: 0.1, armBase: -0.3, armReach: -0.3, backArm: -0.5, frontLeg: 1.15, frontLegBend: 0.05, backLeg: -0.3, backLegBend: 0.55, crouch: 0.45 },
+    // Snapping shin kick, more upright.
+    { lean: 0.3, leanGain: 0.1, armBase: -0.2, armReach: -0.2, backArm: -0.6, frontLeg: 0.95, frontLegBend: 0.22, backLeg: -0.25, backLegBend: 0.3, crouch: 0.25 },
+    // Dropped spinning sweep, very low.
+    { lean: 0.75, leanGain: 0.08, armBase: -0.5, armReach: -0.3, backArm: -0.8, frontLeg: 1.3, frontLegBend: 0.03, backLeg: -0.35, backLegBend: 0.7, crouch: 0.6 },
+  ],
   // Liu Kang high kick: torso tips AWAY from the kick so the head ducks low
   // while the straight leg swings up in front, foot above the head.
-  highKick: { lean: -1.15, leanGain: -0.05, armBase: -0.9, armReach: -0.3, backArm: -1.3, frontLeg: 3.0, frontLegBend: 0.03, backLeg: 0.0, backLegBend: 0.03, crouch: 0.08 },
-  airPunch: { lean: 0.14, leanGain: 0.1, armBase: 0.4, armReach: 1.5, backArm: 0.4, frontLeg: 0.3, frontLegBend: 0.5, backLeg: -0.2, backLegBend: 0.6, crouch: 0 },
+  highKick: [
+    { lean: -1.15, leanGain: -0.05, armBase: -0.9, armReach: -0.3, backArm: -1.3, frontLeg: 3.0, frontLegBend: 0.03, backLeg: 0.0, backLegBend: 0.03, crouch: 0.08 },
+  ],
+  airPunch: [
+    { lean: 0.14, leanGain: 0.1, armBase: 0.4, armReach: 1.5, backArm: 0.4, frontLeg: 0.3, frontLegBend: 0.5, backLeg: -0.2, backLegBend: 0.6, crouch: 0 },
+    { lean: 0.3, leanGain: 0.1, armBase: 2.1, armReach: -0.8, backArm: -0.4, frontLeg: 0.25, frontLegBend: 0.6, backLeg: -0.25, backLegBend: 0.7, crouch: 0 },
+  ],
   // MK jump kick: leg thrust diagonally down-forward along the falling arc, other leg tucked.
-  airKick: { lean: 0.25, leanGain: 0.1, armBase: -0.3, armReach: -0.3, backArm: -0.5, frontLeg: 1.25, frontLegBend: 0.05, backLeg: -0.2, backLegBend: 0.75, crouch: 0 },
-  diveKick: { lean: 0.6, leanGain: 0.1, armBase: -0.7, armReach: -0.3, backArm: -0.9, frontLeg: 0.85, frontLegBend: 0.05, backLeg: 0.6, backLegBend: 0.1, crouch: 0 },
-  launcher: { lean: -0.3, leanGain: -0.12, armBase: 0.8, armReach: 1.4, backArm: -0.4, frontLeg: 0.2, frontLegBend: 0.3, backLeg: -0.2, backLegBend: 0.35, crouch: 0.25 },
+  airKick: [{ lean: 0.25, leanGain: 0.1, armBase: -0.3, armReach: -0.3, backArm: -0.5, frontLeg: 1.25, frontLegBend: 0.05, backLeg: -0.2, backLegBend: 0.75, crouch: 0 }],
+  diveKick: [{ lean: 0.6, leanGain: 0.1, armBase: -0.7, armReach: -0.3, backArm: -0.9, frontLeg: 0.85, frontLegBend: 0.05, backLeg: 0.6, backLegBend: 0.1, crouch: 0 }],
+  launcher: [{ lean: -0.3, leanGain: -0.12, armBase: 0.8, armReach: 1.4, backArm: -0.4, frontLeg: 0.2, frontLegBend: 0.3, backLeg: -0.2, backLegBend: 0.35, crouch: 0.25 }],
   // Shoulder rush: low, long, head-first lunge.
-  dashAttack: { lean: 0.55, leanGain: 0.1, armBase: 0.5, armReach: 1.6, backArm: -0.7, frontLeg: 0.8, frontLegBend: 0.35, backLeg: -0.9, backLegBend: 0.05, crouch: 0.2 },
+  dashAttack: [{ lean: 0.55, leanGain: 0.1, armBase: 0.5, armReach: 1.6, backArm: -0.7, frontLeg: 0.8, frontLegBend: 0.35, backLeg: -0.9, backLegBend: 0.05, crouch: 0.2 }],
 };
 
 /** Configs whose front leg is the striking limb. */
@@ -73,6 +99,7 @@ export function buildPose(
   attackProgress: number,
   knockLean: number,
   wallSliding = false,
+  attackVariant = 0,
 ): Pose {
   let frontLegSwing = 0;
   let backLegSwing = 0;
@@ -92,7 +119,8 @@ export function buildPose(
     frontLegSwing = 0.3;
     backLegSwing = -0.2;
   } else if (attackKind) {
-    const cfg = ATTACK_POSES[attackKind];
+    const variants = ATTACK_POSES[attackKind];
+    const cfg = variants[Math.abs(attackVariant) % variants.length];
     const ext = attackProgress; // negative = chambered, 1 = full snap
     const kick = isKickPose(cfg);
     if (ext < 0) {

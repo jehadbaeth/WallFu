@@ -32,6 +32,8 @@ interface Projectile {
   owner: Fighter;
   dead: boolean;
   stuckTimer: number;
+  /** Fighters already struck; the sword pierces through and keeps flying. */
+  hitSet: Set<Fighter>;
 }
 
 /**
@@ -105,6 +107,7 @@ export class WeaponSystem {
       owner: f,
       dead: false,
       stuckTimer: 0,
+      hitSet: new Set(),
     });
     sound.whoosh(true);
     this.particles.streakBurst(f.x + f.facing * 30, f.y - f.height * 0.6, WHITE, 6, {
@@ -174,19 +177,24 @@ export class WeaponSystem {
       p.rotation = p.kind === "sword" ? p.rotation + dt * 16 * Math.sign(p.vx) : Math.atan2(p.vy, p.vx);
 
       for (const f of this.fighters) {
-        if (f === p.owner || f.koed) continue;
+        if (f === p.owner || f.koed || p.hitSet.has(f)) continue;
         if (Math.abs(p.x - f.x) < f.radius + 14 && p.y > f.y - f.height - 10 && p.y < f.y + 8) {
-          const heavy = p.kind === "sword";
+          const sword = p.kind === "sword";
           const dir = Math.sign(p.vx) || 1;
           const blocked = f.blocking && (f.facing as number) === -dir;
-          const dmg = heavy ? 14 : 11;
-          f.takeHit("highPunch", blocked ? dmg * 0.2 : dmg, blocked ? dir * 140 : dir * 520, blocked ? 0 : -300, blocked ? 0.15 : 0.38, blocked);
-          this.particles.burst(p.x, p.y, YELLOW, heavy ? 22 : 14, { speed: 460, spread: Math.PI * 1.5, gravity: 500, size: 5, glow: true });
-          this.shockRings.spawn(p.x, p.y, WHITE, heavy ? 100 : 70, 0.3, 6);
-          this.hooks.addShake(heavy ? 0.4 : 0.25);
-          sound.hit(heavy, blocked, false);
-          p.dead = true;
-          p.stuckTimer = 0;
+          // Spear pins: massive horizontal carry. Sword slices and keeps flying.
+          const dmg = sword ? 14 : 11;
+          const kb = sword ? 520 : 850;
+          f.takeHit("highPunch", blocked ? dmg * 0.2 : dmg, blocked ? dir * 140 : dir * kb, blocked ? 0 : -300, blocked ? 0.15 : sword ? 0.38 : 0.5, blocked);
+          this.particles.burst(p.x, p.y, YELLOW, sword ? 22 : 14, { speed: 460, spread: Math.PI * 1.5, gravity: 500, size: 5, glow: true });
+          this.shockRings.spawn(p.x, p.y, WHITE, sword ? 100 : 70, 0.3, 6);
+          this.hooks.addShake(sword ? 0.4 : 0.3);
+          sound.hit(sword, blocked, false);
+          p.hitSet.add(f);
+          if (!sword || blocked) {
+            p.dead = true;
+            p.stuckTimer = 0;
+          }
           break;
         }
       }
