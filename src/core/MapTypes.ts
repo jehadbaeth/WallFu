@@ -17,6 +17,13 @@ export interface Polygon {
   points: PolyPoint[];
 }
 
+/** Which random hazard events this map spawns; each is independently addable in the editor. */
+export interface HazardConfig {
+  daggers?: boolean;
+  lightning?: boolean;
+  lava?: boolean;
+}
+
 export interface MapData {
   name: string;
   width: number;
@@ -28,8 +35,16 @@ export interface MapData {
   spawn2: { x: number; y: number };
   /** Optional background image as a data URL, stretched across the arena. */
   backgroundImage?: string;
-  /** Enables random arena hazards (daggers, lightning, lava) on this map. */
+  hazards?: HazardConfig;
+  /** Legacy all-or-nothing flag from older maps; use `hazards` instead. */
   hazardsEnabled?: boolean;
+}
+
+/** Resolves the hazard config, honoring the legacy hazardsEnabled flag on old maps. */
+export function effectiveHazards(map: MapData): HazardConfig {
+  if (map.hazards) return map.hazards;
+  if (map.hazardsEnabled) return { daggers: true, lightning: true, lava: true };
+  return {};
 }
 
 export function defaultMap(width: number, height: number): MapData {
@@ -71,6 +86,7 @@ export function fitMapTo(map: MapData, width: number, height: number): MapData {
     spawn1: { x: map.spawn1.x * sx, y: map.spawn1.y * sy },
     spawn2: { x: map.spawn2.x * sx, y: map.spawn2.y * sy },
     backgroundImage: map.backgroundImage,
+    hazards: map.hazards ? { ...map.hazards } : undefined,
     hazardsEnabled: map.hazardsEnabled,
   };
 }
@@ -86,6 +102,7 @@ export function cloneMap(map: MapData): MapData {
     spawn1: { ...map.spawn1 },
     spawn2: { ...map.spawn2 },
     backgroundImage: map.backgroundImage,
+    hazards: map.hazards ? { ...map.hazards } : undefined,
     hazardsEnabled: map.hazardsEnabled,
   };
 }

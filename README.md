@@ -23,7 +23,9 @@ To anyone watching, two stick figures are fighting on your furniture.
 - **MK3-style combat**: high punch, low punch, high kick, low kick, each with distinct speed, damage, reach, and hitbox height. Down+punch uppercut launcher, aerial punches and kicks, dive kicks, dash attacks, blocking, dashing, double jumps.
 - **Martial-arts animation**: attacks chamber during startup and snap to full extension, head-height roundhouse kicks, Mortal Kombat style diagonal jump kicks, squash-and-stretch, dash afterimages.
 - **Movement tech**: wall-slide, wall-jump, and wall-bounce (heavy knockback into a wall reflects you off it), fast-falls, hit-confirm combo chaining.
-- **Wall-aware maps**: one-way platforms and solid walls, drawn in a built-in editor with save/load, JSON export/import, and optional background images.
+- **Wall-aware maps**: one-way platforms, solid walls, and freeform polygon shapes, drawn in a built-in editor with save/load, JSON export/import, and optional background images.
+- **Levels**: 11 built-in arenas with distinct layouts and hazard mixes, a procedural random map generator, and your own saved maps, all pickable from the level select.
+- **Arena hazards**: crumbling platforms with a hidden timer (they look like normal platforms until they shake and give way), dagger rain, telegraphed lightning strikes, and lava geysers, each individually addable per map in the editor.
 - **VS AI**: fight the computer at three difficulty levels with distinct reaction time, aggression, block rate, and mistake rate.
 - **Full presentation**: real impact sounds and an arcade announcer ("round one... FIGHT!", combo counts, "flawless victory"), particles, shockwaves, screen shake, hit-stop, KO slow motion, combo callouts.
 - **Input**: two players on one keyboard plus standard gamepads (first pad is Player 1, second is Player 2). Keyboard keys and gamepad buttons are both fully rebindable in Options.
@@ -106,6 +108,9 @@ A note on expectations: WallFu currently assumes the projected image is a straig
 
 - **Platform**: one-way. Land on top, jump through from below.
 - **Wall**: solid on all sides. Enables wall-slide, wall-jump, wall-bounce.
+- **Poly**: freeform solid shape. Click points, click the first point to close, Escape cancels. Collides like a wall, any silhouette.
+- **Crumble**: click a platform to make it secretly crumble in fights: it looks normal, shakes once someone stands on it, falls away, and respawns.
+- **+Daggers / +Lightning / +Lava**: add each random hazard event to the map individually.
 - **P1/P2 Spawn**: starting positions each round.
 - **Erase / Undo / Clear**: shape management.
 - **Background / Clear BG**: attach an image behind the arena (downscaled and stored with the map; intended for screen play, not projection).

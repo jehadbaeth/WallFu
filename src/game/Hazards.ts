@@ -1,5 +1,6 @@
 import { Container, Graphics } from "pixi.js";
 import type { MapData, Rect } from "../core/MapTypes";
+import { effectiveHazards } from "../core/MapTypes";
 import type { Fighter } from "../core/Fighter";
 import type { ParticleSystem } from "../effects/Particles";
 import type { ShockRingSystem } from "../effects/ShockRing";
@@ -72,7 +73,7 @@ export class HazardSystem {
   private lightnings: Lightning[] = [];
   private lavas: LavaBurst[] = [];
   private eventTimer = 5;
-  private eventsEnabled = false;
+  private eventPool: Array<"daggers" | "lightning" | "lava"> = [];
   private time = 0;
 
   /** When true (projection mode), crumbling platforms are not drawn; events still are. */
@@ -89,7 +90,12 @@ export class HazardSystem {
   start(fightMap: MapData, fighters: Fighter[]): void {
     this.fightMap = fightMap;
     this.fighters = fighters;
-    this.eventsEnabled = !!fightMap.hazardsEnabled;
+    const cfg = effectiveHazards(fightMap);
+    this.eventPool = [
+      ...(cfg.daggers ? (["daggers"] as const) : []),
+      ...(cfg.lightning ? (["lightning"] as const) : []),
+      ...(cfg.lava ? (["lava"] as const) : []),
+    ];
     this.crumbles = fightMap.platforms
       .filter((p) => p.crumble)
       .map((rect) => ({ rect, state: "idle" as const, timer: 0, fallOffset: 0, fallSpeed: 0 }));
@@ -129,7 +135,7 @@ export class HazardSystem {
     if (!this.fightMap) return;
     this.time += dt;
     this.updateCrumbles(dt);
-    if (this.eventsEnabled) {
+    if (this.eventPool.length) {
       this.eventTimer -= dt;
       if (this.eventTimer <= 0) {
         this.eventTimer = EVENT_INTERVAL_MIN + Math.random() * (EVENT_INTERVAL_MAX - EVENT_INTERVAL_MIN);
@@ -193,9 +199,9 @@ export class HazardSystem {
   }
 
   private spawnRandomEvent(): void {
-    const roll = Math.random();
-    if (roll < 0.34) this.spawnDaggers();
-    else if (roll < 0.67) this.spawnLightning();
+    const kind = this.eventPool[Math.floor(Math.random() * this.eventPool.length)];
+    if (kind === "daggers") this.spawnDaggers();
+    else if (kind === "lightning") this.spawnLightning();
     else this.spawnLava();
   }
 
@@ -358,17 +364,22 @@ export class HazardSystem {
     if (!this.fightMap) return;
 
     if (this.drawGeometry) {
+      // Crumbling platforms are indistinguishable from normal ones until they arm:
+      // the only tell is the shaking, then the fall.
       for (const c of this.crumbles) {
         if (c.state === "gone") continue;
-        const shakeX = c.state === "armed" ? (Math.random() * 2 - 1) * 3 * (1 - c.timer / CRUMBLE_ARM_TIME + 0.3) : 0;
-        const alpha = c.state === "falling" ? Math.max(0, c.timer / CRUMBLE_FALL_TIME) : 0.85;
+        const shakeX = c.state === "armed" ? (Math.random() * 2 - 1) * 3.5 * (1 - c.timer / CRUMBLE_ARM_TIME + 0.3) : 0;
+        const alpha = c.state === "falling" ? Math.max(0, (c.timer / CRUMBLE_FALL_TIME) * 0.9) : 0.9;
         const y = c.rect.y + c.fallOffset;
         this.g.rect(c.rect.x + shakeX, y, c.rect.w, c.rect.h);
-        this.g.fill({ color: c.state === "idle" ? WHITE : YELLOW, alpha });
-        for (let cx = c.rect.x + 14; cx < c.rect.x + c.rect.w - 6; cx += 26) {
-          this.g.moveTo(cx + shakeX, y + 1);
-          this.g.lineTo(cx + 8 + shakeX, y + c.rect.h - 1);
-          this.g.stroke({ width: 2, color: 0x000000, alpha: alpha * 0.7 });
+        this.g.fill({ color: WHITE, alpha });
+        if (c.state === "falling") {
+          // Cracks only appear once it is actually breaking apart.
+          for (let cx = c.rect.x + 14; cx < c.rect.x + c.rect.w - 6; cx += 26) {
+            this.g.moveTo(cx + shakeX, y + 1);
+            this.g.lineTo(cx + 8 + shakeX, y + c.rect.h - 1);
+            this.g.stroke({ width: 2, color: 0x000000, alpha: alpha * 0.7 });
+          }
         }
       }
     }

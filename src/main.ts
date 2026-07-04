@@ -27,7 +27,9 @@ import { CameraShake } from "./effects/CameraShake";
 import { ShockRingSystem } from "./effects/ShockRing";
 import {
   type MapData,
+  type HazardConfig,
   defaultMap,
+  effectiveHazards,
   fitMapTo,
   cloneMap,
   polygonToStrips,
@@ -36,6 +38,7 @@ import {
   loadMapFromStorage,
 } from "./core/MapTypes";
 import { HazardSystem } from "./game/Hazards";
+import { BUILTIN_LEVELS, randomMap } from "./game/Levels";
 import { loadOptions, saveOptions } from "./core/Options";
 import { MapEditor, type EditorTool } from "./editor/MapEditor";
 import { sound } from "./effects/Sound";
@@ -53,7 +56,7 @@ const KO_FREEZE_TIME = 1.0;
 const VIRTUAL_W = 1920;
 const VIRTUAL_H = 1080;
 
-type GameState = "menu" | "options" | "controls" | "editor" | "fight";
+type GameState = "menu" | "levels" | "options" | "controls" | "editor" | "fight";
 
 async function main() {
   const app = new Application();
@@ -545,6 +548,7 @@ async function main() {
   // --- Game state / menu / options / editor wiring ---
   let state: GameState = "menu";
   const menuEl = document.getElementById("menu")!;
+  const levelsEl = document.getElementById("levels")!;
   const optionsEl = document.getElementById("options")!;
   const controlsEl = document.getElementById("controls")!;
   const editorToolbarEl = document.getElementById("editor-toolbar")!;
@@ -552,6 +556,7 @@ async function main() {
   function setState(next: GameState) {
     state = next;
     menuEl.classList.toggle("visible", next === "menu");
+    levelsEl.classList.toggle("visible", next === "levels");
     optionsEl.classList.toggle("visible", next === "options");
     controlsEl.classList.toggle("visible", next === "controls");
     editorToolbarEl.classList.toggle("visible", next === "editor");
@@ -568,15 +573,68 @@ async function main() {
 
   document.querySelectorAll(".btn").forEach((btn) => btn.addEventListener("click", () => sound.click()));
 
+  // --- Level select ---
+  let pendingVsAI = false;
+  const levelsGrid = document.getElementById("levels-grid")!;
+
+  function levelButton(title: string, desc: string, getMap: () => MapData | null): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    const titleEl = document.createElement("span");
+    titleEl.textContent = title;
+    const descEl = document.createElement("small");
+    descEl.textContent = desc;
+    btn.append(titleEl, descEl);
+    btn.addEventListener("click", () => {
+      const map = getMap();
+      if (!map) return;
+      sound.click();
+      aiController = pendingVsAI ? new AIController(options.aiDifficulty) : null;
+      startMatch(map);
+      setState("fight");
+    });
+    return btn;
+  }
+
+  function hazardSummary(map: MapData): string {
+    const cfg = effectiveHazards(map);
+    const parts = [
+      cfg.daggers ? "daggers" : null,
+      cfg.lightning ? "lightning" : null,
+      cfg.lava ? "lava" : null,
+      map.platforms.some((p) => p.crumble) ? "crumbling" : null,
+    ].filter(Boolean);
+    return parts.length ? `Hazards: ${parts.join(", ")}` : "No hazards";
+  }
+
+  function buildLevelsGrid() {
+    levelsGrid.innerHTML = "";
+    for (const level of BUILTIN_LEVELS) {
+      const preview = level.build(VIRTUAL_W, VIRTUAL_H);
+      levelsGrid.appendChild(levelButton(level.name, `${level.desc} · ${hazardSummary(preview)}`, () => level.build(VIRTUAL_W, VIRTUAL_H)));
+    }
+    levelsGrid.appendChild(levelButton("Random Map", "Procedurally generated, new every time.", () => randomMap(VIRTUAL_W, VIRTUAL_H)));
+    for (const name of listSavedMaps()) {
+      levelsGrid.appendChild(
+        levelButton(name, "Custom map from the editor.", () => {
+          const map = loadMapFromStorage(name);
+          if (!map) alert("Map not found.");
+          return map;
+        }),
+      );
+    }
+  }
+
+  document.getElementById("levels-back")!.addEventListener("click", () => setState("menu"));
   document.getElementById("menu-play")!.addEventListener("click", () => {
-    aiController = null;
-    startMatch(currentMap);
-    setState("fight");
+    pendingVsAI = false;
+    buildLevelsGrid();
+    setState("levels");
   });
   document.getElementById("menu-play-ai")!.addEventListener("click", () => {
-    aiController = new AIController(options.aiDifficulty);
-    startMatch(currentMap);
-    setState("fight");
+    pendingVsAI = true;
+    buildLevelsGrid();
+    setState("levels");
   });
   document.getElementById("menu-editor")!.addEventListener("click", () => setState("editor"));
   document.getElementById("menu-options")!.addEventListener("click", () => {
@@ -808,17 +866,28 @@ async function main() {
     });
   }
 
-  const hazardsBtn = document.getElementById("ed-hazards")!;
+  const hazardButtons: Array<{ id: string; key: keyof HazardConfig }> = [
+    { id: "ed-hz-daggers", key: "daggers" },
+    { id: "ed-hz-lightning", key: "lightning" },
+    { id: "ed-hz-lava", key: "lava" },
+  ];
   function refreshHazardsButton() {
-    hazardsBtn.textContent = `Hazards: ${mapEditor.getMap().hazardsEnabled ? "On" : "Off"}`;
-    hazardsBtn.classList.toggle("active", !!mapEditor.getMap().hazardsEnabled);
+    const cfg = effectiveHazards(mapEditor.getMap());
+    for (const { id, key } of hazardButtons) {
+      document.getElementById(id)!.classList.toggle("active", !!cfg[key]);
+    }
   }
-  hazardsBtn.addEventListener("click", () => {
-    const map = mapEditor.getMap();
-    map.hazardsEnabled = !map.hazardsEnabled;
-    mapEditor.setMap(map);
-    refreshHazardsButton();
-  });
+  for (const { id, key } of hazardButtons) {
+    document.getElementById(id)!.addEventListener("click", () => {
+      const map = mapEditor.getMap();
+      const cfg = effectiveHazards(map);
+      cfg[key] = !cfg[key];
+      map.hazards = cfg;
+      map.hazardsEnabled = undefined; // migrated off the legacy flag
+      mapEditor.setMap(map);
+      refreshHazardsButton();
+    });
+  }
   document.getElementById("ed-undo")!.addEventListener("click", () => mapEditor.undo());
   document.getElementById("ed-clear")!.addEventListener("click", () => {
     if (confirm("Clear all shapes on this map?")) mapEditor.clear();
@@ -850,6 +919,7 @@ async function main() {
       return;
     }
     mapEditor.setMap(fitMapTo(map, VIRTUAL_W, VIRTUAL_H));
+    refreshHazardsButton();
   });
   document.getElementById("ed-bg")!.addEventListener("click", () => {
     const input = document.createElement("input");
@@ -894,6 +964,7 @@ async function main() {
         try {
           const map = JSON.parse(text) as MapData;
           mapEditor.setMap(fitMapTo(map, VIRTUAL_W, VIRTUAL_H));
+          refreshHazardsButton();
         } catch {
           alert("Invalid map file.");
         }
@@ -914,6 +985,8 @@ async function main() {
       setState("menu");
     } else if (state === "editor" && e.code === "Escape") {
       mapEditor.cancelPolyDraft();
+    } else if ((state === "levels" || state === "options") && e.code === "Escape") {
+      setState("menu");
     }
   });
 

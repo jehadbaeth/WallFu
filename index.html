@@ -102,6 +102,33 @@
         margin-left: auto;
       }
 
+      #levels-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(200px, 1fr));
+        gap: 10px;
+        max-width: 900px;
+        max-height: 60vh;
+        overflow-y: auto;
+        padding: 4px;
+      }
+      #levels-grid .btn {
+        min-width: unset;
+        padding: 10px 12px;
+        font-size: 17px;
+        text-align: left;
+      }
+      #levels-grid .btn small {
+        display: block;
+        font-size: 12px;
+        font-weight: 400;
+        color: #aaa;
+        margin-top: 3px;
+      }
+      #levels-grid .btn:hover small { color: #044; }
+      @media (max-width: 700px) {
+        #levels-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      }
+
       #bindings-grid, #pad-grid {
         display: grid;
         grid-template-columns: auto auto auto;
@@ -190,6 +217,12 @@
       <button class="btn" id="opt-back">Back</button>
     </div>
 
+    <div id="levels" class="overlay">
+      <h1>Choose Level</h1>
+      <div id="levels-grid"></div>
+      <button class="btn" id="levels-back">Back</button>
+    </div>
+
     <div id="controls" class="overlay">
       <h1>Bindings</h1>
       <span style="color:#ffe14d;font-size:17px;font-weight:700">Keyboard</span>
@@ -207,7 +240,9 @@
       <button class="btn" id="ed-tool-wall">Wall</button>
       <button class="btn" id="ed-tool-poly">Poly</button>
       <button class="btn" id="ed-tool-crumble">Crumble</button>
-      <button class="btn" id="ed-hazards">Hazards: Off</button>
+      <button class="btn" id="ed-hz-daggers">+Daggers</button>
+      <button class="btn" id="ed-hz-lightning">+Lightning</button>
+      <button class="btn" id="ed-hz-lava">+Lava</button>
       <button class="btn" id="ed-tool-spawn1">P1 Spawn</button>
       <button class="btn" id="ed-tool-spawn2">P2 Spawn</button>
       <button class="btn" id="ed-tool-erase">Erase</button>
