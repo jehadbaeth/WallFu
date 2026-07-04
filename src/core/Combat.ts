@@ -17,28 +17,28 @@ export interface AttackData {
 
 export const ATTACKS: Record<AttackKind, AttackData> = {
   light: {
-    startup: 0.06,
+    startup: 0.05,
     active: 0.08,
-    recovery: 0.14,
+    recovery: 0.1,
     damage: 7,
-    knockback: 360,
+    knockback: 380,
     upKnockback: 120,
-    hitstun: 0.26,
+    hitstun: 0.22,
     range: 58,
     height: 70,
-    hitstop: 0.05,
+    hitstop: 0.035,
   },
   heavy: {
-    startup: 0.15,
+    startup: 0.12,
     active: 0.1,
-    recovery: 0.3,
+    recovery: 0.22,
     damage: 17,
-    knockback: 640,
+    knockback: 680,
     upKnockback: 280,
-    hitstun: 0.42,
+    hitstun: 0.34,
     range: 68,
     height: 82,
-    hitstop: 0.09,
+    hitstop: 0.07,
   },
 };
 

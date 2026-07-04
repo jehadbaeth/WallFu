@@ -104,6 +104,19 @@ export class StickFigureView {
         this.squashVelocity = 0;
         this.knockLean = ev.blocked ? 0 : Math.sign(ev.knockbackVx || 1) * (heavy ? 0.5 : 0.3);
         this.knockLeanVelocity = 0;
+      } else if (ev.type === "wallJump") {
+        this.squash = 1.3;
+        this.squashVelocity = 0;
+        this.stretchX = 1.3;
+        this.stretchXVelocity = 0;
+        this.stretchY = 0.85;
+        this.stretchYVelocity = 0;
+      } else if (ev.type === "wallBounce") {
+        this.hitFlash = 1;
+        this.squash = 0.7;
+        this.squashVelocity = 0;
+        this.knockLean = Math.sign(fighter.vx || 1) * 0.4;
+        this.knockLeanVelocity = 0;
       }
     }
 
@@ -142,6 +155,8 @@ export class StickFigureView {
     const grounded = fighter.grounded;
     const speed = Math.abs(fighter.vx);
     const running = grounded && speed > 10 && !fighter.isAttacking && !fighter.blocking;
+    const wallSliding =
+      !grounded && fighter.touchingWallSide !== 0 && !fighter.isAttacking && !fighter.isStunned && !fighter.blocking;
     const pose = buildPose(
       this.runPhase,
       running,
@@ -157,6 +172,7 @@ export class StickFigureView {
           ? 1
           : 0,
       this.knockLean,
+      wallSliding,
     );
     const drawColor = this.hitFlash > 0.4 ? 0xffffff : this.color;
     drawSkeleton(this.body, pose, fighter.facing, drawColor, 1);
@@ -177,6 +193,7 @@ function buildPose(
   stunned: boolean,
   attackProgress: number,
   knockLean: number,
+  wallSliding = false,
 ): Pose {
   let legSwing = 0;
   let armSwing = 0;
@@ -209,6 +226,14 @@ function buildPose(
     torsoLean = 0.08 * facing;
     frontArmSwing = armSwing;
     backArmSwing = -armSwing;
+  } else if (wallSliding) {
+    // Braced against a wall: legs bent and pushing off it, torso leaning back away from it.
+    legBend = 0.5;
+    legSwing = 0.25;
+    frontArmSwing = 0.9;
+    backArmSwing = 0.6;
+    torsoLean = -0.22 * facing;
+    crouch = 0.08;
   } else if (Math.abs(vy) > 5) {
     // Airborne pose: tuck legs going up, extend going down.
     if (vy < 0) {

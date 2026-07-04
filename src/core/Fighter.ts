@@ -6,6 +6,8 @@ import type { MapData } from "./MapTypes";
 export type FighterEvent =
   | { type: "jump" }
   | { type: "airJump" }
+  | { type: "wallJump" }
+  | { type: "wallBounce" }
   | { type: "land"; impactSpeed: number }
   | { type: "dash" }
   | { type: "turn" }
@@ -16,18 +18,25 @@ export type FighterEvent =
   | { type: "ko" };
 
 // Tuned for a fast, snappy, arcade feel rather than realistic physics.
-const MOVE_SPEED = 460; // px/s
-const GROUND_ACCEL = 5200; // px/s^2, near-instant direction changes
-const GROUND_FRICTION = 4200; // px/s^2 when no input
-const AIR_ACCEL = 2600;
-const GRAVITY = 2200; // px/s^2
-const FAST_FALL_GRAVITY_MULT = 2.4;
-const JUMP_VELOCITY = -840;
-const AIR_JUMP_VELOCITY = -780;
-const DASH_SPEED = 980;
-const DASH_DURATION = 0.14; // seconds
-const DASH_COOLDOWN = 0.35;
-const MAX_FALL_SPEED = 1700;
+const MOVE_SPEED = 560; // px/s
+const GROUND_ACCEL = 6400; // px/s^2, near-instant direction changes
+const GROUND_FRICTION = 5000; // px/s^2 when no input
+const AIR_ACCEL = 3400;
+const GRAVITY = 2600; // px/s^2
+const FAST_FALL_GRAVITY_MULT = 2.6;
+const JUMP_VELOCITY = -900;
+const AIR_JUMP_VELOCITY = -840;
+const DASH_SPEED = 1180;
+const DASH_DURATION = 0.12; // seconds
+const DASH_COOLDOWN = 0.22;
+const MAX_FALL_SPEED = 1950;
+
+const WALL_SLIDE_MAX_FALL = 260; // capped fall speed while pressed against a wall
+const WALL_JUMP_VX = 640;
+const WALL_JUMP_VY = -860;
+const WALL_BOUNCE_MIN_SPEED = 260; // knockback speed needed to bounce off a wall instead of just stopping
+const WALL_BOUNCE_DAMPING = 0.55;
+const WALL_BOUNCE_POP = 140; // small upward pop on bounce for extra juice
 
 export type AttackPhase = "startup" | "active" | "recovery" | null;
 
@@ -44,6 +53,9 @@ export class Fighter {
   dashTimer = 0;
   dashCooldown = 0;
   dashDirection: 1 | -1 = 1;
+
+  /** -1 = wall to the left, 1 = wall to the right, 0 = no wall contact. Updated once per frame from the previous physics step. */
+  touchingWallSide: -1 | 0 | 1 = 0;
 
   radius = 22; // half-width for collision, feet-to-hip visual scale derives from this
   height = 130;
@@ -89,6 +101,7 @@ export class Fighter {
     this.airJumpsUsed = 0;
     this.dashTimer = 0;
     this.dashCooldown = 0;
+    this.touchingWallSide = 0;
     this.health = this.maxHealth;
     this.koed = false;
     this.blocking = false;
@@ -151,11 +164,17 @@ export class Fighter {
       const wasGrounded = this.grounded;
       const ground = resolveGround(this, map, prevY);
       this.grounded = ground.grounded;
+      this.touchingWallSide = ground.wallHit;
       if (ground.grounded) {
         this.airJumpsUsed = 0;
         if (!wasGrounded && ground.impactSpeed > 200) {
           this.events.push({ type: "land", impactSpeed: ground.impactSpeed });
         }
+      }
+      if (ground.wallHit !== 0 && Math.abs(ground.wallImpactSpeed) > WALL_BOUNCE_MIN_SPEED) {
+        this.vx = -ground.wallImpactSpeed * WALL_BOUNCE_DAMPING;
+        this.vy = Math.min(this.vy, -WALL_BOUNCE_POP);
+        this.events.push({ type: "wallBounce" });
       }
       this.checkBlastZone(map);
       return;
@@ -224,6 +243,13 @@ export class Fighter {
           this.vy = JUMP_VELOCITY;
           this.grounded = false;
           this.events.push({ type: "jump" });
+        } else if (this.touchingWallSide !== 0) {
+          this.vx = -this.touchingWallSide * WALL_JUMP_VX;
+          this.vy = WALL_JUMP_VY;
+          this.facing = -this.touchingWallSide as 1 | -1;
+          this.airJumpsUsed = 0;
+          this.touchingWallSide = 0;
+          this.events.push({ type: "wallJump" });
         } else if (this.airJumpsUsed < this.maxAirJumps) {
           this.vy = AIR_JUMP_VELOCITY;
           this.airJumpsUsed++;
@@ -237,6 +263,11 @@ export class Fighter {
       }
       this.vy += gravity * dt;
       if (this.vy > MAX_FALL_SPEED) this.vy = MAX_FALL_SPEED;
+
+      // Wall-slide: cap fall speed while airborne and holding into a wall, for wall-climb-style play.
+      if (!this.grounded && this.touchingWallSide !== 0 && intent.moveX === this.touchingWallSide && this.vy > WALL_SLIDE_MAX_FALL) {
+        this.vy = WALL_SLIDE_MAX_FALL;
+      }
     } else {
       // Attacking: keep applying gravity if airborne.
       if (!this.grounded) {
@@ -255,6 +286,7 @@ export class Fighter {
     const wasGrounded = this.grounded;
     const ground = resolveGround(this, map, prevY);
     this.grounded = ground.grounded;
+    this.touchingWallSide = ground.grounded ? 0 : ground.wallHit;
     if (ground.grounded) {
       this.airJumpsUsed = 0;
       if (!wasGrounded && ground.impactSpeed > 200) {
@@ -279,9 +311,15 @@ function moveToward(current: number, target: number, maxDelta: number): number {
 }
 
 /** Resolves solid walls (blocks all sides) and one-way platforms (land-on-top only). */
-function resolveGround(f: Fighter, map: MapData, prevY: number): { grounded: boolean; impactSpeed: number } {
+function resolveGround(
+  f: Fighter,
+  map: MapData,
+  prevY: number
+): { grounded: boolean; impactSpeed: number; wallHit: -1 | 0 | 1; wallImpactSpeed: number } {
   let grounded = false;
   let impactSpeed = 0;
+  let wallHit: -1 | 0 | 1 = 0;
+  let wallImpactSpeed = 0;
 
   for (const w of map.walls) {
     const left = f.x - f.radius;
@@ -313,10 +351,18 @@ function resolveGround(f: Fighter, map: MapData, prevY: number): { grounded: boo
       if (f.vy < 0) f.vy = 0;
     } else if (minPen === fromLeft) {
       f.x = wLeft - f.radius;
-      if (f.vx > 0) f.vx = 0;
+      if (f.vx > 0) {
+        wallHit = 1;
+        wallImpactSpeed = f.vx;
+        f.vx = 0;
+      }
     } else {
       f.x = wRight + f.radius;
-      if (f.vx < 0) f.vx = 0;
+      if (f.vx < 0) {
+        wallHit = -1;
+        wallImpactSpeed = f.vx;
+        f.vx = 0;
+      }
     }
   }
 
@@ -333,5 +379,5 @@ function resolveGround(f: Fighter, map: MapData, prevY: number): { grounded: boo
     }
   }
 
-  return { grounded, impactSpeed };
+  return { grounded, impactSpeed, wallHit, wallImpactSpeed };
 }
