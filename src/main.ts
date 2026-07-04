@@ -142,6 +142,33 @@ async function main() {
   const weapons = new WeaponSystem(particles, shockRings, { addShake: (a) => addShake(a) });
   world.addChild(weapons.view);
 
+  // OFDP-style impact frames: radial burst lines around the hit for a few frames.
+  const impactG = new Graphics();
+  impactG.blendMode = "add";
+  world.addChild(impactG);
+  let impactFrames: Array<{ x: number; y: number; t: number; max: number; big: boolean }> = [];
+  function impactFrame(x: number, y: number, big: boolean) {
+    impactFrames.push({ x, y, t: big ? 0.22 : 0.13, max: big ? 0.22 : 0.13, big });
+  }
+  function drawImpactFrames(dt: number) {
+    impactG.clear();
+    for (const f of impactFrames) {
+      f.t -= dt;
+      if (f.t <= 0) continue;
+      const p = 1 - f.t / f.max;
+      const lines = f.big ? 18 : 10;
+      for (let i = 0; i < lines; i++) {
+        const a = (i / lines) * Math.PI * 2 + (f.big ? 0.35 : 0.15);
+        const r0 = (f.big ? 190 : 120) + p * 170;
+        const r1 = r0 + (f.big ? 260 : 140) * (1 - p);
+        impactG.moveTo(f.x + Math.cos(a) * r0, f.y + Math.sin(a) * r0);
+        impactG.lineTo(f.x + Math.cos(a) * r1, f.y + Math.sin(a) * r1);
+        impactG.stroke({ width: f.big ? 7 : 4, color: WHITE, alpha: (1 - p) * 0.8 });
+      }
+    }
+    impactFrames = impactFrames.filter((f) => f.t > 0);
+  }
+
   const shake = new CameraShake();
   function addShake(amount: number) {
     shake.add(amount * options.shakeIntensity);
@@ -153,6 +180,9 @@ async function main() {
   const player2 = new Fighter(currentMap.spawn2.x, currentMap.spawn2.y);
   player1.facing = 1;
   player2.facing = -1;
+  // Previous sim positions for render interpolation (smooth motion on any refresh rate).
+  const p1Prev = { x: player1.x, y: player1.y };
+  const p2Prev = { x: player2.x, y: player2.y };
 
   const bindings = loadBindings();
   const padBindings = loadPadBindings();
@@ -502,6 +532,11 @@ async function main() {
     particles.streakBurst(x, y, WHITE, heavy ? 12 : 6, { angle: knockAngle, speed: heavy ? 640 : 460, spread: 0.9, size: heavy ? 5 : 4 });
     shockRings.spawn(x, y, heavy ? YELLOW : WHITE, heavy ? 150 : 85, heavy ? 0.42 : 0.26, heavy ? 9 : 6);
     if (heavy) shockRings.spawn(x, y, WHITE, 90, 0.3, 5);
+    if (heavy) {
+      // OFDP-style splatter arcs and a burst of radial impact lines.
+      particles.burst(x, y, RED, 10, { speed: 520, spread: Math.PI * 1.1, angle: knockAngle, gravity: 1100, size: 4 });
+      impactFrame(x, y, kind === "highKick");
+    }
     if (kind === "highKick") {
       // Liu Kang special: the hit erupts in fire and the victim leaves a flame trail while flying.
       particles.burst(x, y, ORANGE, 26, { speed: 560, spread: Math.PI * 1.4, angle: knockAngle, gravity: 300, size: 6, glow: true });
@@ -540,6 +575,7 @@ async function main() {
     zoomPunchVelocity = 0;
     const victim = loser === "p1" ? player1 : player2;
     shockRings.spawn(victim.x, victim.y - 60, WHITE, 180, 0.5, 10);
+    impactFrame(victim.x, victim.y - 60, true);
     if (label === "TIME!") {
       if (!sound.voice(["vo-time"])) sound.announce(1.1);
     } else {
@@ -1129,6 +1165,10 @@ async function main() {
           intent2.highPunchPressed = false;
           intent2.highPunch = false;
         }
+        p1Prev.x = player1.x;
+        p1Prev.y = player1.y;
+        p2Prev.x = player2.x;
+        p2Prev.y = player2.y;
         player1.update(FIXED_DT, intent1, fightMap);
         player2.update(FIXED_DT, intent2, fightMap);
 
@@ -1215,12 +1255,16 @@ async function main() {
     flashOverlay.alpha = screenFlash;
     updateAnnouncement(frameDt);
 
-    player1View.update(player1, frameDt);
-    player2View.update(player2, frameDt);
+    // Render interpolation between the last two sim states: kills the judder
+    // on displays that don't run at exactly 60Hz.
+    const alpha = Math.min(1, accumulator / FIXED_DT);
+    player1View.update(player1, frameDt, p1Prev.x + (player1.x - p1Prev.x) * alpha, p1Prev.y + (player1.y - p1Prev.y) * alpha);
+    player2View.update(player2, frameDt, p2Prev.x + (player2.x - p2Prev.x) * alpha, p2Prev.y + (player2.y - p2Prev.y) * alpha);
     particles.update(frameDt);
     shockRings.update(frameDt);
     hazards.draw();
     weapons.draw();
+    drawImpactFrames(frameDt);
 
     // Round timer readout: red pulse in the final ten seconds.
     if (options.roundTime > 0 && !suddenDeath && !matchOver) {
