@@ -17,12 +17,22 @@ export interface MapData {
 
 export function defaultMap(width: number, height: number): MapData {
   const groundY = height - 120;
+  // Side walls make wall-slides, wall-jumps, and wall-bounces part of every match,
+  // and the floating platforms give aerial play somewhere to go.
   return {
-    name: "Flat Floor",
+    name: "Arena",
     width,
     height,
-    platforms: [{ x: 0, y: groundY, w: width, h: 30 }],
-    walls: [],
+    platforms: [
+      { x: 0, y: groundY, w: width, h: 30 },
+      { x: width * 0.18, y: groundY - 200, w: width * 0.2, h: 20 },
+      { x: width * 0.62, y: groundY - 200, w: width * 0.2, h: 20 },
+      { x: width * 0.4, y: groundY - 380, w: width * 0.2, h: 20 },
+    ],
+    walls: [
+      { x: 0, y: groundY - height * 0.62, w: 36, h: height * 0.62 },
+      { x: width - 36, y: groundY - height * 0.62, w: 36, h: height * 0.62 },
+    ],
     spawn1: { x: width * 0.3, y: groundY },
     spawn2: { x: width * 0.7, y: groundY },
   };
