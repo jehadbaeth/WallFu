@@ -1,8 +1,13 @@
 # Sound credits
 
-All sound effects and announcer voice lines in this directory are by **Kenney**
-(https://kenney.nl), released under **CC0 1.0 Universal (public domain)**:
+All sounds in this directory are **CC0 1.0 Universal (public domain)**:
 https://creativecommons.org/publicdomain/zero/1.0/
+
+The kung-fu movie hit impacts (`kfhit-*.m4a`) are from **"37 hits/punches"**
+by **Independent.nu**, published on OpenGameArt:
+https://opengameart.org/content/37-hitspunches
+
+Everything else is by **Kenney** (https://kenney.nl):
 
 Packs used:
 

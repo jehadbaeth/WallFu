@@ -4,6 +4,15 @@
 type OscType = "sine" | "square" | "sawtooth" | "triangle";
 
 const SFX_FILES = [
+  "kfhit-med-000.m4a",
+  "kfhit-med-001.m4a",
+  "kfhit-med-002.m4a",
+  "kfhit-med-003.m4a",
+  "kfhit-med-004.m4a",
+  "kfhit-heavy-000.m4a",
+  "kfhit-heavy-001.m4a",
+  "kfhit-heavy-002.m4a",
+  "kfhit-heavy-003.m4a",
   "impactpunch-medium-000.ogg",
   "impactpunch-medium-001.ogg",
   "impactpunch-medium-002.ogg",
@@ -66,6 +75,10 @@ const SFX_FILES = [
   "vo-10.ogg",
 ] as const;
 
+// Movie-style hits (Independent.nu "37 hits/punches", CC0 via OpenGameArt):
+// full-scale dubbed impacts with the boom and tail already baked in.
+const KF_MEDIUM = ["kfhit-med-000", "kfhit-med-001", "kfhit-med-002", "kfhit-med-003", "kfhit-med-004"];
+const KF_HEAVY = ["kfhit-heavy-000", "kfhit-heavy-001", "kfhit-heavy-002", "kfhit-heavy-003"];
 const PUNCH_MEDIUM = ["impactpunch-medium-000", "impactpunch-medium-001", "impactpunch-medium-002", "impactpunch-medium-003", "impactpunch-medium-004"];
 const PUNCH_HEAVY = ["impactpunch-heavy-000", "impactpunch-heavy-001", "impactpunch-heavy-002", "impactpunch-heavy-003", "impactpunch-heavy-004"];
 const SOFT_MEDIUM = ["impactsoft-medium-000", "impactsoft-medium-001", "impactsoft-medium-002"];
@@ -169,7 +182,7 @@ class SoundEngine {
       fetch(base + file)
         .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(String(res.status)))))
         .then((data) => ctx.decodeAudioData(data))
-        .then((buffer) => this.buffers.set(file.replace(/\.ogg$/, ""), buffer))
+        .then((buffer) => this.buffers.set(file.replace(/\.(ogg|m4a)$/, ""), buffer))
         .catch(() => {
           // Missing sample: synthesis fallback keeps working.
         });
@@ -343,37 +356,22 @@ class SoundEngine {
       this.kungfuCrack({ f0: 1500, f1: 950, q: 4, dur: 0.05 }, { gain: 0.7, echoSend: 0.15 });
       return;
     }
-    // Movie punch anatomy: a bass BOOM slams first, a whip-crack sweep bites
-    // on top, slapback echo rings behind, pitched-down samples add meat.
-    // NOTE: the high-Q bandpass eats ~20dB of the noise, so crack gains run
-    // far above 1.0 on purpose - the master compressor catches the sum.
-    const recipe = pick(kick ? KICK_CRACKS : PUNCH_CRACKS);
-    const mult = heavy ? 0.82 : 1;
-    this.kungfuCrack(
-      { f0: recipe.f0 * mult, f1: recipe.f1 * mult, q: recipe.q, dur: recipe.dur * (heavy ? 1.35 : 1) },
-      { gain: heavy ? 3.2 : 2.4 },
-    );
-    if (heavy) {
-      // The doubled flam crack the old dubs loved on power blows.
-      this.kungfuCrack(
-        { f0: recipe.f0 * 0.6, f1: recipe.f1 * 0.55, q: recipe.q, dur: recipe.dur * 1.6 },
-        { gain: 1.9, when: 0.03 },
-      );
-    }
-    // The body: the compressed low "DUN" that makes meme punches feel huge.
-    this.tone(this.vary(kick ? 150 : 190, 0.1), heavy ? 0.2 : 0.13, { type: "sine", endFreq: 45, gain: heavy ? 0.8 : 0.55 });
-    // The "kow": resonant drop gluing crack to boom.
-    this.tone(this.vary(kick ? 320 : 480, 0.15), heavy ? 0.16 : 0.1, {
-      type: "triangle",
-      endFreq: kick ? 90 : 130,
-      gain: heavy ? 0.42 : 0.3,
-      echo: true,
+    // Real movie hit samples ARE the sound now - nothing else layered loud
+    // enough to mask them. Kicks pitch down a touch; sub tone adds chest
+    // weight on real speakers.
+    const played = this.sample(pick(heavy ? KF_HEAVY : KF_MEDIUM), {
+      volume: heavy ? 1.2 : 1.0,
+      rate: kick ? 0.88 : 1,
+      rateVar: 0.06,
     });
-    // Meat: punch samples pitched well down so they thump instead of slap.
-    this.sample(pick(heavy ? PUNCH_HEAVY : PUNCH_MEDIUM), { volume: heavy ? 0.9 : 0.7, rate: kick ? 0.72 : 0.8, rateVar: 0.08 });
-    this.sample(pick(SOFT_MEDIUM), { volume: heavy ? 0.6 : 0.4, rate: 0.8, when: 0.008 });
+    if (!played) {
+      // Samples still loading: synth whip-crack fallback.
+      const recipe = pick(kick ? KICK_CRACKS : PUNCH_CRACKS);
+      this.kungfuCrack(recipe, { gain: heavy ? 3.2 : 2.4 });
+      this.sample(pick(heavy ? PUNCH_HEAVY : PUNCH_MEDIUM), { volume: heavy ? 0.9 : 0.7, rate: 0.8, rateVar: 0.08 });
+    }
     const sub = kick ? (heavy ? 55 : 85) : heavy ? 75 : 110;
-    this.tone(this.vary(sub), heavy ? 0.26 : 0.12, { type: "sine", endFreq: 28, gain: heavy ? 0.55 : 0.3 });
+    this.tone(this.vary(sub), heavy ? 0.26 : 0.12, { type: "sine", endFreq: 28, gain: heavy ? 0.5 : 0.26 });
   }
 
   wallJump(): void {
@@ -391,15 +389,14 @@ class SoundEngine {
   }
 
   ko(): void {
-    // The finisher: triple flam crack drowning in echo, then the fall.
-    this.kungfuCrack({ f0: 2400, f1: 600, q: 8, dur: 0.16 }, { gain: 3.4, echoSend: 0.8 });
-    this.kungfuCrack({ f0: 1500, f1: 380, q: 8, dur: 0.2 }, { gain: 2.6, when: 0.05, echoSend: 0.8 });
-    this.kungfuCrack({ f0: 900, f1: 250, q: 7, dur: 0.26 }, { gain: 2.0, when: 0.12, echoSend: 0.8 });
-    this.tone(170, 0.3, { type: "sine", endFreq: 40, gain: 0.85 });
-    this.sample(pick(PUNCH_HEAVY), { volume: 0.9, rate: 0.72, echo: true });
-    this.sample(pick(SOFT_HEAVY), { volume: 0.9, rate: 0.8, when: 0.02, echo: true });
-    this.tone(520, 0.55, { type: "sawtooth", endFreq: 35, gain: 0.28 });
-    this.noiseHit(0.3, { gain: 0.22, filterFreq: 280 });
+    // The finisher: the biggest movie hit slowed down, doubled, all echo.
+    if (!this.sample(pick(KF_HEAVY), { volume: 1.3, rate: 0.8, echo: true })) {
+      this.kungfuCrack({ f0: 2400, f1: 600, q: 8, dur: 0.16 }, { gain: 3.4, echoSend: 0.8 });
+    }
+    this.sample(pick(KF_HEAVY), { volume: 0.8, rate: 0.62, when: 0.07, echo: true });
+    this.tone(170, 0.3, { type: "sine", endFreq: 40, gain: 0.7 });
+    this.tone(520, 0.55, { type: "sawtooth", endFreq: 35, gain: 0.24 });
+    this.noiseHit(0.3, { gain: 0.2, filterFreq: 280 });
   }
 
   click(): void {
