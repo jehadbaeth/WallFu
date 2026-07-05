@@ -79,6 +79,9 @@ export class Fighter {
   /** Ducking: holding down while grounded. Shrinks the hurtbox so high attacks whiff. */
   crouching = false;
 
+  /** Swept off the feet: lying on the ground for the rest of the hitstun. */
+  downed = false;
+
   radius = 22; // half-width for collision, feet-to-hip visual scale derives from this
   height = 130;
 
@@ -125,6 +128,7 @@ export class Fighter {
     this.dashCooldown = 0;
     this.touchingWallSide = 0;
     this.crouching = false;
+    this.downed = false;
     this.health = this.maxHealth;
     this.koed = false;
     this.blocking = false;
@@ -136,11 +140,12 @@ export class Fighter {
     this.events.length = 0;
   }
 
-  takeHit(kind: AttackKind, damage: number, knockbackVx: number, knockbackVy: number, hitstun: number, blocked: boolean): void {
+  takeHit(kind: AttackKind, damage: number, knockbackVx: number, knockbackVy: number, hitstun: number, blocked: boolean, knockdown = false): void {
     this.health = Math.max(0, this.health - damage);
     this.vx = knockbackVx;
     this.vy = knockbackVy;
     this.hitstunTimer = hitstun;
+    this.downed = knockdown && !blocked;
     this.grounded = false;
     this.attackKind = null;
     this.attackPhase = null;
@@ -156,6 +161,8 @@ export class Fighter {
     const punchPressed = intent.highPunchPressed || intent.lowPunchPressed;
     const kickPressed = intent.highKickPressed || intent.lowKickPressed;
     if (!punchPressed && !kickPressed) return;
+    // Treat "still crouched" as down-held so duck moves never drop the input.
+    const down = intent.fastFall || this.crouching;
     let kind: AttackKind;
     if (this.isDashing) {
       kind = "dashAttack";
@@ -164,11 +171,11 @@ export class Fighter {
       if (kickPressed && intent.fastFall) kind = "diveKick";
       else if (punchPressed) kind = "airPunch";
       else kind = "airKick";
-    } else if (punchPressed && intent.fastFall) {
+    } else if (punchPressed && down) {
       // Classic MK duck+punch uppercut.
       kind = "launcher";
-    } else if (kickPressed && intent.fastFall) {
-      // Duck+kick: spinning ankle sweep.
+    } else if (kickPressed && down) {
+      // Duck+kick: ankle sweep that knocks down.
       kind = "spinSweep";
     } else if (intent.highPunchPressed) {
       kind = "highPunch";
@@ -209,6 +216,7 @@ export class Fighter {
 
     if (this.hitstunTimer > 0) {
       this.hitstunTimer -= dt;
+      if (this.hitstunTimer <= 0) this.downed = false;
       this.blocking = false;
       this.crouching = false;
       let gravity = GRAVITY;
@@ -250,7 +258,12 @@ export class Fighter {
         this.attackHasHit = false;
         this.events.push({ type: "attackActive", kind });
         const lunge = LUNGE_SPEED[kind];
-        if (lunge && this.grounded) {
+        if (kind === "launcher" && this.grounded) {
+          // MK uppercut: the whole body rises with the punch.
+          this.vy = -380;
+          this.grounded = false;
+          this.vx = this.facing * 120;
+        } else if (lunge && this.grounded) {
           this.vx = this.facing * lunge;
         } else if (kind === "airKick") {
           this.vx = this.facing * Math.max(Math.abs(this.vx), AIR_KICK_VX);

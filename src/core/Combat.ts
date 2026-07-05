@@ -25,6 +25,8 @@ export interface AttackData {
   hitstop: number;
   /** How far below the feet the hitbox extends. Defaults to -12 (stops just above the feet). */
   bottomOffset?: number;
+  /** Sweeps the defender off their feet: they land and stay down through the hitstun. */
+  knockdown?: boolean;
 }
 
 // Each move has a distinct job:
@@ -88,19 +90,20 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     hitstop: 0.09,
     bottomOffset: -72, // head-level only: ducking goes clean under it
   },
-  // Down+kick: spinning ankle sweep, hits low, pops them up. Duck-friendly.
+  // Down+kick: MK sweep. Trips the opponent flat on their back.
   spinSweep: {
     startup: 0.09,
     active: 0.16,
-    recovery: 0.22,
+    recovery: 0.24,
     damage: 8,
-    knockback: 220,
-    upKnockback: 540,
-    hitstun: 0.5,
+    knockback: 190,
+    upKnockback: 300,
+    hitstun: 0.95,
     range: 78,
     height: 44,
     hitstop: 0.06,
     bottomOffset: 0,
+    knockdown: true,
   },
   airPunch: {
     startup: 0.04,
@@ -253,7 +256,7 @@ function resolveOneWay(attacker: Fighter, defender: Fighter): HitResult[] {
   const upKb = blocked ? data.upKnockback * 0.2 : data.upKnockback;
   const stun = blocked ? data.hitstun * 0.4 : data.hitstun;
 
-  defender.takeHit(kind, dmg, dir * kb, -upKb, stun, blocked);
+  defender.takeHit(kind, dmg, dir * kb, -upKb, stun, blocked, data.knockdown);
 
   const hitX = (hb.minX + hb.maxX) / 2;
   const hitY = (hb.minY + hb.maxY) / 2;

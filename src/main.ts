@@ -463,6 +463,11 @@ async function main() {
     } else if (ev.type === "jump" || ev.type === "airJump") {
       particles.dustPuff(fighter.x, fighter.y, color, 8);
       sound.jump();
+    } else if (ev.type === "turn") {
+      // Skid dust when reversing at speed.
+      if (fighter.grounded && Math.abs(fighter.vx) > 260) {
+        particles.dustPuff(fighter.x + fighter.facing * 14, fighter.y, WHITE, 6);
+      }
     } else if (ev.type === "dash") {
       particles.burst(fighter.x, fighter.y, color, 14, { speed: 220, spread: Math.PI * 0.6, gravity: 100, size: 3, glow: true });
       particles.streakBurst(fighter.x, fighter.y - 40, color, 8, {
@@ -515,6 +520,11 @@ async function main() {
       }
       if (ev.kind === "diveKick") {
         particles.streakBurst(fighter.x, fighter.y, color, 6, { angle: Math.PI / 2 - fighter.facing * 0.4, speed: 500, spread: 0.4, size: 4 });
+      }
+      if (ev.kind === "launcher") {
+        // Uppercut: rising sparks follow the fist as the body lifts off.
+        particles.streakBurst(fighter.x + fighter.facing * 24, fighter.y - 80, YELLOW, 8, { angle: -Math.PI / 2, speed: 520, spread: 0.5, size: 4 });
+        particles.dustPuff(fighter.x, fighter.y, WHITE, 8);
       }
     }
   }

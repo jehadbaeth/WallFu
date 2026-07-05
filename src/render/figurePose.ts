@@ -136,6 +136,7 @@ export function buildPose(
   wallSliding = false,
   attackVariant = 0,
   crouching = false,
+  downed = false,
 ): Pose {
   const pose: Pose = {
     torsoPitch: 0.12,
@@ -151,7 +152,15 @@ export function buildPose(
     backKneeSide: -1,
   };
 
-  if (stunned) {
+  if (stunned && downed) {
+    // Swept: flat on the back, legs kicked out, arms sprawled.
+    pose.torsoPitch = -1.42;
+    pose.crouch = 1.5;
+    pose.frontFoot = pt(34, -4);
+    pose.backFoot = pt(24, -2);
+    pose.frontHand = pt(-8, 14);
+    pose.backHand = pt(-14, 10);
+  } else if (stunned) {
     pose.torsoPitch = -0.35;
     pose.frontHand = pt(-12, 8);
     pose.backHand = pt(-18, 14);

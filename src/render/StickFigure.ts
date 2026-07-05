@@ -189,6 +189,7 @@ export class StickFigureView {
       wallSliding,
       this.attackVariant,
       fighter.crouching,
+      fighter.downed && fighter.grounded,
     );
     // Alternate punching hands: swap arm targets so the other fist fires while
     // the first returns to guard.
@@ -209,7 +210,10 @@ export class StickFigureView {
     const drawColor = this.hitFlash > 0.4 ? 0xffffff : this.color;
     drawSkeleton(this.body, this.pose, fighter.facing, drawColor, 1, false);
 
-    this.view.position.set(x, y);
+    // Running bob: the whole figure bounds with the stride.
+    const running2 = fighter.grounded && Math.abs(fighter.vx) > 10 && !fighter.isAttacking && !fighter.blocking;
+    const bob = running2 ? Math.abs(Math.sin(this.runPhase)) * 4 : 0;
+    this.view.position.set(x, y - bob);
     // Squash/stretch composes with the dash stretch springs.
     const squash = Math.max(0.4, this.squash);
     this.view.scale.set(this.stretchX / Math.sqrt(squash), this.stretchY * squash);
