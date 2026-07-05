@@ -343,16 +343,28 @@ export class MapEditor {
   }
 
   private drawWheelIcon(x: number, y: number): void {
-    this.g.circle(x, y, WHEEL_RADIUS);
-    this.g.stroke({ width: 3, color: YELLOW, alpha: 0.9 });
-    this.g.circle(x, y, 6);
-    this.g.fill({ color: YELLOW, alpha: 0.9 });
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      this.g.moveTo(x + Math.cos(a) * 8, y + Math.sin(a) * 8);
-      this.g.lineTo(x + Math.cos(a) * WHEEL_RADIUS, y + Math.sin(a) * WHEEL_RADIUS);
-      this.g.stroke({ width: 3, color: YELLOW, alpha: 0.9 });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+      const cos = Math.cos(a);
+      const sin = Math.sin(a);
+      const tipR = WHEEL_RADIUS + 8;
+      this.g.moveTo(x + cos * 10, y + sin * 10);
+      this.g.lineTo(x + cos * (tipR - 10), y + sin * (tipR - 10));
+      this.g.stroke({ width: 3, color: WHITE, alpha: 0.9 });
+      this.g.poly([
+        x + cos * tipR,
+        y + sin * tipR,
+        x + cos * (tipR - 12) - sin * 5,
+        y + sin * (tipR - 12) + cos * 5,
+        x + cos * (tipR - 12) + sin * 5,
+        y + sin * (tipR - 12) - cos * 5,
+      ]);
+      this.g.fill({ color: WHITE, alpha: 0.9 });
     }
+    this.g.circle(x, y, 9);
+    this.g.fill({ color: 0x2a2a2a, alpha: 1 });
+    this.g.circle(x, y, 9);
+    this.g.stroke({ width: 3, color: YELLOW, alpha: 0.9 });
   }
 
   private drawPortalIcon(x: number, y: number, color: number): void {

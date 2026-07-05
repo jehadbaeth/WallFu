@@ -2,7 +2,8 @@ import { Graphics, Container } from "pixi.js";
 import type { Fighter } from "../core/Fighter";
 import { ROLL_DURATION } from "../core/Fighter";
 import { ATTACKS, isHeavyKind } from "../core/Combat";
-import { buildPose, blendPose, computeSkeleton, HEAD_R, type Pose, type Limb } from "./figurePose";
+import { buildPose, blendPose, computeSkeleton, HEAD_R, type Pose, type Limb, type Skeleton } from "./figurePose";
+import { drawWeaponShape, WEAPON_HALF, type WeaponKind } from "../game/Weapons";
 
 const STROKE = 6;
 const FLIP_DURATION = 0.45;
@@ -40,6 +41,9 @@ export class StickFigureView {
   private pose: Pose | null = null; // blended display pose
   private attackVariant = 0; // rerolled each strike so repeats look different
   private punchHand = false; // alternates which arm throws consecutive punches
+
+  /** Weapon in hand (set by the game each frame); drawn glued to the lead fist. */
+  heldWeapon: WeaponKind | null = null;
 
   constructor(color: number) {
     this.color = color;
@@ -79,8 +83,9 @@ export class StickFigureView {
     for (const ev of fighter.events) {
       if (ev.type === "attackStart") {
         this.attackVariant = Math.floor(Math.random() * 16);
-        // Consecutive punches alternate hands.
-        if (ev.kind === "lowPunch" || ev.kind === "highPunch" || ev.kind === "airPunch" || ev.kind === "launcher") {
+        // Consecutive punches alternate hands - bare-handed only, a weapon
+        // stays in its hand.
+        if (!this.heldWeapon && (ev.kind === "lowPunch" || ev.kind === "highPunch" || ev.kind === "airPunch" || ev.kind === "launcher")) {
           this.punchHand = !this.punchHand;
         }
       } else if (ev.type === "jump") {
@@ -191,7 +196,7 @@ export class StickFigureView {
     for (const g of this.ghosts) {
       const gg = new Graphics();
       const ghostPose = buildPose(g.phase, true, 0, g.facing, null, false, false, 0, 0);
-      drawSkeleton(gg, ghostPose, g.facing, this.color, g.alpha, true);
+      drawSkeleton(gg, computeSkeleton(ghostPose, g.facing), g.facing, this.color, g.alpha, true);
       gg.position.set(g.x - x, g.y - y);
       this.ghostLayer.addChild(gg);
     }
@@ -229,7 +234,7 @@ export class StickFigureView {
     );
     // Alternate punching hands: swap arm targets so the other fist fires while
     // the first returns to guard.
-    if (this.punchHand) {
+    if (this.punchHand && !this.heldWeapon) {
       const hand = target.frontHand;
       target.frontHand = target.backHand;
       target.backHand = hand;
@@ -244,7 +249,30 @@ export class StickFigureView {
     this.pose = this.pose ? blendPose(this.pose, target, t) : target;
 
     const drawColor = this.hitFlash > 0.4 ? 0xffffff : this.color;
-    drawSkeleton(this.body, this.pose, fighter.facing, drawColor, 1, false);
+    const sk = computeSkeleton(this.pose, fighter.facing);
+    drawSkeleton(this.body, sk, fighter.facing, drawColor, 1, false);
+
+    // Weapon glued to the lead fist, aligned with the arm's reach direction:
+    // held up in the guard, and thrusting exactly with every punch.
+    if (this.heldWeapon) {
+      const hand = sk.frontArm.end;
+      const punching = fighter.attackKind === "lowPunch" || fighter.attackKind === "highPunch" || fighter.attackKind === "airPunch";
+      let angle: number;
+      if (punching) {
+        // Strike: the weapon extends the punching arm.
+        angle = Math.atan2(hand.y - sk.shoulder.y, hand.x - sk.shoulder.x);
+      } else {
+        // Carry: fixed ready angle, tip up-forward, whatever the arm is doing.
+        const ready = this.heldWeapon === "spear" ? -0.45 : -0.72;
+        angle = fighter.facing > 0 ? ready : Math.PI - ready;
+      }
+      const wx = Math.cos(angle);
+      const wy = Math.sin(angle);
+      const half = WEAPON_HALF[this.heldWeapon];
+      // Spear gripped a quarter back from center; sword gripped at the handle.
+      const grip = this.heldWeapon === "spear" ? half * 0.25 : half * 0.8;
+      drawWeaponShape(this.body, this.heldWeapon, hand.x + wx * grip, hand.y + wy * grip, angle, 1);
+    }
 
     // Running bob: the whole figure bounds with the stride. Slides and rolls glide instead.
     const running2 =
@@ -264,8 +292,7 @@ function darken(color: number, factor: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
-function drawSkeleton(g: Graphics, pose: Pose, facing: 1 | -1, color: number, alpha: number, ghost: boolean): void {
-  const sk = computeSkeleton(pose, facing);
+function drawSkeleton(g: Graphics, sk: Skeleton, facing: 1 | -1, color: number, alpha: number, ghost: boolean): void {
   const dir = facing;
   const outline = darken(color, 0.3);
 

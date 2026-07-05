@@ -1322,6 +1322,8 @@ async function main() {
     // Render interpolation between the last two sim states: kills the judder
     // on displays that don't run at exactly 60Hz.
     const alpha = Math.min(1, accumulator / FIXED_DT);
+    player1View.heldWeapon = weapons.holding(player1) ?? null;
+    player2View.heldWeapon = weapons.holding(player2) ?? null;
     player1View.update(player1, frameDt, p1Prev.x + (player1.x - p1Prev.x) * alpha, p1Prev.y + (player1.y - p1Prev.y) * alpha);
     player2View.update(player2, frameDt, p2Prev.x + (player2.x - p2Prev.x) * alpha, p2Prev.y + (player2.y - p2Prev.y) * alpha);
     particles.update(frameDt);

@@ -37,8 +37,8 @@ interface Dagger {
   hit: Set<Fighter>;
 }
 
-const WHEEL_SPIN_SPEED = 1.7; // rad/s
-const WHEEL_FIRE_INTERVAL = 1.05;
+const WHEEL_SPIN_SPEED = 2.6; // rad/s
+const WHEEL_FIRE_INTERVAL = 0.9;
 const WHEEL_DAGGER_SPEED = 720;
 
 interface WheelState {
@@ -525,23 +525,36 @@ export class HazardSystem {
       this.g.fill({ color: YELLOW, alpha });
     }
 
-    // Spinning dagger wheels.
+    // Spinning dagger wheels: a dark hub ringed by real dagger blades.
     for (const w of this.wheels) {
-      this.g.circle(w.x, w.y, WHEEL_RADIUS);
-      this.g.stroke({ width: 4, color: YELLOW, alpha: 0.9 });
-      this.g.circle(w.x, w.y, 7);
-      this.g.fill({ color: YELLOW, alpha: 1 });
-      for (let i = 0; i < 4; i++) {
-        const a = w.angle + (i / 4) * Math.PI * 2;
+      for (let i = 0; i < 6; i++) {
+        const a = w.angle + (i / 6) * Math.PI * 2;
         const cos = Math.cos(a);
         const sin = Math.sin(a);
-        this.g.moveTo(w.x + cos * 8, w.y + sin * 8);
-        this.g.lineTo(w.x + cos * WHEEL_RADIUS, w.y + sin * WHEEL_RADIUS);
-        this.g.stroke({ width: 4, color: YELLOW, alpha: 0.95 });
-        // Blade tip.
-        this.g.circle(w.x + cos * (WHEEL_RADIUS - 3), w.y + sin * (WHEEL_RADIUS - 3), 4);
+        const tipR = WHEEL_RADIUS + 8;
+        // Blade shaft.
+        this.g.moveTo(w.x + cos * 10, w.y + sin * 10);
+        this.g.lineTo(w.x + cos * (tipR - 10), w.y + sin * (tipR - 10));
+        this.g.stroke({ width: 4, color: WHITE, alpha: 0.95 });
+        // Blade tip: outward-pointing triangle, same silhouette as the projectiles.
+        this.g.poly([
+          w.x + cos * tipR,
+          w.y + sin * tipR,
+          w.x + cos * (tipR - 12) - sin * 5,
+          w.y + sin * (tipR - 12) + cos * 5,
+          w.x + cos * (tipR - 12) + sin * 5,
+          w.y + sin * (tipR - 12) - cos * 5,
+        ]);
         this.g.fill({ color: WHITE, alpha: 0.95 });
+        // Pommel at the hub.
+        this.g.circle(w.x + cos * 12, w.y + sin * 12, 3.5);
+        this.g.fill({ color: YELLOW, alpha: 1 });
       }
+      // Hub over the blade bases.
+      this.g.circle(w.x, w.y, 9);
+      this.g.fill({ color: 0x2a2a2a, alpha: 1 });
+      this.g.circle(w.x, w.y, 9);
+      this.g.stroke({ width: 3, color: YELLOW, alpha: 0.9 });
     }
 
     // Portal swirls: nested counter-rotating ellipses.

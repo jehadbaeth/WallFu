@@ -267,56 +267,49 @@ export class WeaponSystem {
       this.drawWeapon(p.kind, p.x, p.y, p.rotation, alpha);
     }
 
-    // Held weapon sits in the lead hand at the fighter's side, and thrusts
-    // forward with punches (the melee poke that weaponReach backs up).
-    for (const [f, kind] of this.held) {
-      const dir = f.facing;
-      const punching = f.attackKind === "lowPunch" || f.attackKind === "highPunch" || f.attackKind === "airPunch";
-      if (punching && f.attackPhase) {
-        const ext = f.attackPhase === "active" ? 1 : f.attackPhase === "recovery" ? 0.55 : 0.1;
-        const half = kind === "spear" ? 34 : 26;
-        const hx = f.x + dir * (14 + half + ext * (16 + f.weaponReach * 0.6));
-        const hy = f.y - f.height * 0.6;
-        this.drawWeapon(kind, hx, hy, dir > 0 ? 0 : Math.PI, 0.95);
-      } else {
-        const angle = kind === "spear" ? -0.28 : -0.72; // spear near-level, sword angled up
-        this.drawWeapon(kind, f.x + dir * 22, f.y - f.height * 0.46, dir > 0 ? angle : Math.PI - angle, 0.95);
-      }
-    }
+    // Held weapons are drawn by StickFigureView, anchored to the actual hand.
   }
 
   private drawWeapon(kind: WeaponKind, x: number, y: number, rotation: number, alpha: number): void {
-    const cos = Math.cos(rotation);
-    const sin = Math.sin(rotation);
-    if (kind === "spear") {
-      const half = 34;
-      this.g.moveTo(x - cos * half, y - sin * half);
-      this.g.lineTo(x + cos * half, y + sin * half);
-      this.g.stroke({ width: 4, color: STEEL, alpha });
-      // Tip.
-      this.g.poly([
-        x + cos * half,
-        y + sin * half,
-        x + cos * (half - 12) - sin * 5,
-        y + sin * (half - 12) + cos * 5,
-        x + cos * (half - 12) + sin * 5,
-        y + sin * (half - 12) - cos * 5,
-      ]);
-      this.g.fill({ color: WHITE, alpha });
-    } else {
-      const half = 26;
-      // Blade.
-      this.g.moveTo(x - cos * (half * 0.45), y - sin * (half * 0.45));
-      this.g.lineTo(x + cos * half, y + sin * half);
-      this.g.stroke({ width: 6, color: STEEL, alpha });
-      // Crossguard.
-      this.g.moveTo(x - cos * (half * 0.45) - sin * 10, y - sin * (half * 0.45) + cos * 10);
-      this.g.lineTo(x - cos * (half * 0.45) + sin * 10, y - sin * (half * 0.45) - cos * 10);
-      this.g.stroke({ width: 4, color: YELLOW, alpha });
-      // Grip.
-      this.g.moveTo(x - cos * (half * 0.45), y - sin * (half * 0.45));
-      this.g.lineTo(x - cos * (half * 0.85), y - sin * (half * 0.85));
-      this.g.stroke({ width: 4, color: 0x8a5a2b, alpha });
-    }
+    drawWeaponShape(this.g, kind, x, y, rotation, alpha);
+  }
+}
+
+/** Half-length of each weapon's sprite; used to place grips and tips. */
+export const WEAPON_HALF: Record<WeaponKind, number> = { spear: 34, sword: 26 };
+
+/** Draws a weapon centered at (x, y) with the tip pointing along `rotation`. */
+export function drawWeaponShape(g: Graphics, kind: WeaponKind, x: number, y: number, rotation: number, alpha: number): void {
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  if (kind === "spear") {
+    const half = WEAPON_HALF.spear;
+    g.moveTo(x - cos * half, y - sin * half);
+    g.lineTo(x + cos * half, y + sin * half);
+    g.stroke({ width: 4, color: STEEL, alpha });
+    // Tip.
+    g.poly([
+      x + cos * half,
+      y + sin * half,
+      x + cos * (half - 12) - sin * 5,
+      y + sin * (half - 12) + cos * 5,
+      x + cos * (half - 12) + sin * 5,
+      y + sin * (half - 12) - cos * 5,
+    ]);
+    g.fill({ color: WHITE, alpha });
+  } else {
+    const half = WEAPON_HALF.sword;
+    // Blade.
+    g.moveTo(x - cos * (half * 0.45), y - sin * (half * 0.45));
+    g.lineTo(x + cos * half, y + sin * half);
+    g.stroke({ width: 6, color: STEEL, alpha });
+    // Crossguard.
+    g.moveTo(x - cos * (half * 0.45) - sin * 10, y - sin * (half * 0.45) + cos * 10);
+    g.lineTo(x - cos * (half * 0.45) + sin * 10, y - sin * (half * 0.45) - cos * 10);
+    g.stroke({ width: 4, color: YELLOW, alpha });
+    // Grip.
+    g.moveTo(x - cos * (half * 0.45), y - sin * (half * 0.45));
+    g.lineTo(x - cos * (half * 0.85), y - sin * (half * 0.85));
+    g.stroke({ width: 4, color: 0x8a5a2b, alpha });
   }
 }
