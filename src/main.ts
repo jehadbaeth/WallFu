@@ -816,6 +816,7 @@ async function main() {
     const d = options.aiDifficulty;
     document.getElementById("opt-ai-value")!.textContent = d.charAt(0).toUpperCase() + d.slice(1);
     document.getElementById("opt-projection")!.textContent = options.projectionMode ? "On" : "Off";
+    document.getElementById("opt-projection-key")!.textContent = keyLabel(options.projectionKey);
     document.getElementById("opt-time-value")!.textContent = options.roundTime > 0 ? `${options.roundTime}s` : "Off";
     document.getElementById("opt-weapons")!.textContent = options.weapons ? "On" : "Off";
   }
@@ -846,11 +847,31 @@ async function main() {
     hazards.drawGeometry = !options.projectionMode;
   }
   applyProjectionMode();
-  document.getElementById("opt-projection")!.addEventListener("click", () => {
-    options.projectionMode = !options.projectionMode;
+  function toggleProjectionMode(force?: boolean) {
+    options.projectionMode = force ?? !options.projectionMode;
     saveOptions(options);
     applyProjectionMode();
     refreshOptionsUI();
+  }
+  document.getElementById("opt-projection")!.addEventListener("click", () => toggleProjectionMode());
+
+  // The projection toggle key works from anywhere; rebindable in Options.
+  const projectionKeyBtn = document.getElementById("opt-projection-key") as HTMLButtonElement;
+  projectionKeyBtn.addEventListener("click", () => {
+    projectionKeyBtn.classList.add("listening");
+    projectionKeyBtn.textContent = "press key";
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      window.removeEventListener("keydown", onKey, true);
+      projectionKeyBtn.classList.remove("listening");
+      if (e.code !== "Escape") {
+        options.projectionKey = e.code;
+        saveOptions(options);
+      }
+      refreshOptionsUI();
+    };
+    window.addEventListener("keydown", onKey, true);
   });
   function stepAiDifficulty(delta: number) {
     const i = AI_DIFFICULTIES.indexOf(options.aiDifficulty);
@@ -1162,9 +1183,19 @@ async function main() {
     startMatch(mapEditor.getMap());
     setState("fight");
   });
+  document.getElementById("ed-play-projection")!.addEventListener("click", () => {
+    toggleProjectionMode(true);
+    startMatch(mapEditor.getMap());
+    setState("fight");
+  });
   document.getElementById("ed-back")!.addEventListener("click", () => setState("menu"));
 
   window.addEventListener("keydown", (e) => {
+    // Projection mode toggles from anywhere in the game.
+    if (e.code === options.projectionKey) {
+      toggleProjectionMode();
+      return;
+    }
     if (state === "fight" && e.code === "Escape" && !matchOver) {
       setState("menu");
     } else if (matchOver && (e.code === "Enter" || e.code === "Escape")) {

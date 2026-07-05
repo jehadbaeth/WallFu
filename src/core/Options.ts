@@ -7,6 +7,8 @@ export interface Options {
   aiDifficulty: AIDifficulty;
   /** Projection mapping mode: map geometry and backgrounds render black so only fighters and effects hit the wall. */
   projectionMode: boolean;
+  /** KeyboardEvent.code that toggles projection mode from anywhere in the game. */
+  projectionKey: string;
   /** Round time limit in seconds; 0 disables the timer. */
   roundTime: number;
   /** Random throwable weapon spawns during fights. */
@@ -22,6 +24,7 @@ export function defaultOptions(): Options {
     soundVolume: 0.7,
     aiDifficulty: "medium",
     projectionMode: false,
+    projectionKey: "Backquote",
     roundTime: 90,
     weapons: true,
   };
