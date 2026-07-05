@@ -1,8 +1,10 @@
 name: Deploy to GitHub Pages
 
+# Deploys only on release tags: day-to-day pushes to main never touch the live site.
 on:
   push:
-    branches: [main]
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
 
 permissions:
