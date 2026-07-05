@@ -65,6 +65,12 @@ export const ROLL_DURATION = 0.3; // seconds of roll animation after a hard land
 const ROLL_MIN_IMPACT = 700; // fall speed that triggers a roll instead of a thud
 const ROLL_SPEED = 540; // horizontal speed carried out of the roll
 
+// Longest a combo may keep someone continuously stunned before they get control back.
+const MAX_COMBO_LOCK = 0.9;
+// A combo only ends once the victim has been actionable this long: a re-hit
+// landing the same frame the stun expires must NOT reset the lock budget.
+const COMBO_LINK_GRACE = 0.25;
+
 const WALL_SLIDE_MAX_FALL = 260; // capped fall speed while pressed against a wall
 const WALL_JUMP_VX = 640;
 const WALL_JUMP_VY = -860;
@@ -122,6 +128,15 @@ export class Fighter {
 
   hitstunTimer = 0;
 
+  /** Consecutive hits taken without recovering; drives combo scaling. */
+  comboHits = 0;
+
+  /** Seconds spent continuously stunned in the current combo. */
+  comboLockTime = 0;
+
+  /** Counts down actionable time after stun; the combo resets only at zero. */
+  private comboLinkTimer = 0;
+
   events: FighterEvent[] = [];
 
   constructor(x: number, y: number) {
@@ -164,14 +179,32 @@ export class Fighter {
     this.attackTimer = 0;
     this.attackHasHit = false;
     this.hitstunTimer = 0;
+    this.comboHits = 0;
+    this.comboLockTime = 0;
+    this.comboLinkTimer = 0;
     this.events.length = 0;
   }
 
   takeHit(kind: AttackKind, damage: number, knockbackVx: number, knockbackVy: number, hitstun: number, blocked: boolean, knockdown = false): void {
-    this.health = Math.max(0, this.health - damage);
-    this.vx = knockbackVx;
+    // Combo scaling: every consecutive hit inside hitstun stuns less, hurts
+    // less, and pushes further, so mashed punches can never lock a player
+    // down forever - an escape window opens around the 3rd-4th hit.
+    const comboContinues = this.hitstunTimer > 0 || this.comboLinkTimer > 0;
+    if (!blocked) {
+      this.comboHits = comboContinues ? this.comboHits + 1 : 1;
+      if (!comboContinues) this.comboLockTime = 0;
+      this.comboLinkTimer = COMBO_LINK_GRACE;
+    }
+    const stunScale = blocked ? 1 : Math.pow(0.78, this.comboHits - 1);
+    const damageScale = blocked ? 1 : Math.pow(0.88, this.comboHits - 1);
+    const pushScale = blocked ? 1 : Math.min(1 + 0.12 * (this.comboHits - 1), 1.6);
+    this.health = Math.max(0, this.health - damage * damageScale);
+    this.vx = knockbackVx * pushScale;
     this.vy = knockbackVy;
-    this.hitstunTimer = hitstun;
+    // Hard ceiling on continuous lockdown: however the combo is composed, the
+    // victim is guaranteed control back within MAX_COMBO_LOCK of the first hit.
+    const stunBudget = blocked ? hitstun : Math.max(0, MAX_COMBO_LOCK - this.comboLockTime);
+    this.hitstunTimer = Math.min(hitstun * stunScale, stunBudget);
     this.sliding = false;
     this.rollTimer = 0;
     this.downed = knockdown && !blocked;
@@ -246,6 +279,7 @@ export class Fighter {
 
     if (this.hitstunTimer > 0) {
       this.hitstunTimer -= dt;
+      this.comboLockTime += dt;
       if (this.hitstunTimer <= 0) this.downed = false;
       this.blocking = false;
       this.crouching = false;
@@ -275,6 +309,15 @@ export class Fighter {
       }
       this.checkBlastZone(map);
       return;
+    }
+
+    // Actionable time bleeds the combo link; only at zero does the combo reset.
+    if (this.comboLinkTimer > 0) {
+      this.comboLinkTimer -= dt;
+      if (this.comboLinkTimer <= 0) {
+        this.comboHits = 0;
+        this.comboLockTime = 0;
+      }
     }
 
     // Attack state machine.
