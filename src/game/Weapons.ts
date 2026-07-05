@@ -99,7 +99,7 @@ export class WeaponSystem {
     if (!kind || f.koed) return false;
     this.held.delete(f);
     f.weaponReach = 0;
-    const speed = kind === "spear" ? 1250 : 980;
+    const speed = kind === "spear" ? 1600 : 1250;
     this.projectiles.push({
       kind,
       x: f.x + f.facing * 30,
