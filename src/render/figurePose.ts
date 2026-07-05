@@ -139,6 +139,7 @@ export function buildPose(
   downed = false,
   sliding = false,
   rolling = false,
+  armed = false,
 ): Pose {
   const pose: Pose = {
     torsoPitch: 0.12,
@@ -278,6 +279,26 @@ export function buildPose(
     pose.frontHand = pt(GUARD_FRONT.x + s, GUARD_FRONT.y + s * 0.6);
     pose.backHand = pt(GUARD_BACK.x - s * 0.5, GUARD_BACK.y + s * 0.6);
     pose.crouch = 0.15 + Math.sin(phase) * 0.012;
+  }
+
+  // Armed: Xiao Xiao / One Finger Death Punch weapon language - BOTH hands on
+  // the weapon at all times. The renderer draws the weapon along the axis
+  // between the two hands, so the grip is physically coherent in every pose.
+  if (armed && !stunned && !downed) {
+    const punchKind = attackKind === "lowPunch" || attackKind === "highPunch" || attackKind === "airPunch";
+    if (attackKind && punchKind) {
+      // Thrust: the lead hand already travels chamber -> strike; the rear
+      // hand rides the shaft behind it so the whole weapon drives forward.
+      pose.backHand = pt(pose.frontHand.x * 0.35 - 10, pose.frontHand.y * 0.35 + 9);
+    } else {
+      // Carry stance: weapon across the body, lead hand forward on the
+      // shaft, rear hand low by the hip. Replaces pumping arms while running.
+      const bob = running ? Math.sin(phase) * 1.5 : 0;
+      pose.frontHand = pt(26, -2 + bob);
+      pose.backHand = pt(-2, 11 + bob);
+      pose.frontElbowSide = 1;
+      pose.backElbowSide = 1;
+    }
   }
 
   pose.torsoPitch += knockLean;

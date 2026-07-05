@@ -231,6 +231,7 @@ export class StickFigureView {
       fighter.downed && fighter.grounded,
       fighter.sliding,
       fighter.rollTimer > 0,
+      this.heldWeapon !== null,
     );
     // Alternate punching hands: swap arm targets so the other fist fires while
     // the first returns to guard.
@@ -252,26 +253,26 @@ export class StickFigureView {
     const sk = computeSkeleton(this.pose, fighter.facing);
     drawSkeleton(this.body, sk, fighter.facing, drawColor, 1, false);
 
-    // Weapon glued to the lead fist, aligned with the arm's reach direction:
-    // held up in the guard, and thrusting exactly with every punch.
+    // Two-handed weapon (Xiao Xiao / OFDP style): drawn along the axis
+    // between the hands, which the armed poses keep on the shaft at all times.
     if (this.heldWeapon) {
-      const hand = sk.frontArm.end;
-      const punching = fighter.attackKind === "lowPunch" || fighter.attackKind === "highPunch" || fighter.attackKind === "airPunch";
-      let angle: number;
-      if (punching) {
-        // Strike: the weapon extends the punching arm.
-        angle = Math.atan2(hand.y - sk.shoulder.y, hand.x - sk.shoulder.x);
+      const front = sk.frontArm.end;
+      const back = sk.backArm.end;
+      let ax = front.x - back.x;
+      let ay = front.y - back.y;
+      const len = Math.hypot(ax, ay);
+      if (len < 4) {
+        ax = fighter.facing;
+        ay = 0;
       } else {
-        // Carry: fixed ready angle, tip up-forward, whatever the arm is doing.
-        const ready = this.heldWeapon === "spear" ? -0.45 : -0.72;
-        angle = fighter.facing > 0 ? ready : Math.PI - ready;
+        ax /= len;
+        ay /= len;
       }
-      const wx = Math.cos(angle);
-      const wy = Math.sin(angle);
       const half = WEAPON_HALF[this.heldWeapon];
-      // Spear gripped a quarter back from center; sword gripped at the handle.
-      const grip = this.heldWeapon === "spear" ? half * 0.25 : half * 0.8;
-      drawWeaponShape(this.body, this.heldWeapon, hand.x + wx * grip, hand.y + wy * grip, angle, 1);
+      // Spear: balanced grip, tip well past the lead hand, butt behind the
+      // rear hand. Sword: both hands at the handle, blade fully forward.
+      const lead = this.heldWeapon === "spear" ? half * 0.12 : half * 0.8;
+      drawWeaponShape(this.body, this.heldWeapon, front.x + ax * lead, front.y + ay * lead, Math.atan2(ay, ax), 1);
     }
 
     // Running bob: the whole figure bounds with the stride. Slides and rolls glide instead.
