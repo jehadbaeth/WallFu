@@ -24,6 +24,23 @@ export interface HazardConfig {
   lava?: boolean;
 }
 
+/** Spinning blade wheel placed in the editor; fires daggers outward as it turns. */
+export interface DaggerWheel {
+  x: number;
+  y: number;
+}
+
+export const WHEEL_RADIUS = 34;
+export const PORTAL_RADIUS = 46;
+
+/** Linked pair: enter either end, come out the other. */
+export interface Portal {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
 export interface MapData {
   name: string;
   width: number;
@@ -36,6 +53,8 @@ export interface MapData {
   /** Optional background image as a data URL, stretched across the arena. */
   backgroundImage?: string;
   hazards?: HazardConfig;
+  daggerWheels?: DaggerWheel[];
+  portals?: Portal[];
   /** Legacy all-or-nothing flag from older maps; use `hazards` instead. */
   hazardsEnabled?: boolean;
 }
@@ -88,6 +107,8 @@ export function fitMapTo(map: MapData, width: number, height: number): MapData {
     backgroundImage: map.backgroundImage,
     hazards: map.hazards ? { ...map.hazards } : undefined,
     hazardsEnabled: map.hazardsEnabled,
+    daggerWheels: map.daggerWheels?.map((w) => ({ x: w.x * sx, y: w.y * sy })),
+    portals: map.portals?.map((p) => ({ x1: p.x1 * sx, y1: p.y1 * sy, x2: p.x2 * sx, y2: p.y2 * sy })),
   };
 }
 
@@ -104,6 +125,8 @@ export function cloneMap(map: MapData): MapData {
     backgroundImage: map.backgroundImage,
     hazards: map.hazards ? { ...map.hazards } : undefined,
     hazardsEnabled: map.hazardsEnabled,
+    daggerWheels: map.daggerWheels?.map((w) => ({ ...w })),
+    portals: map.portals?.map((p) => ({ ...p })),
   };
 }
 

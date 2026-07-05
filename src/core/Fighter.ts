@@ -106,6 +106,9 @@ export class Fighter {
   radius = 22; // half-width for collision, feet-to-hip visual scale derives from this
   height = 130;
 
+  /** Extra punch range from a held weapon (set by the weapon system). */
+  weaponReach = 0;
+
   // Combat state.
   maxHealth = 100;
   health = 100;
@@ -152,6 +155,7 @@ export class Fighter {
     this.sliding = false;
     this.rollTimer = 0;
     this.downed = false;
+    this.weaponReach = 0;
     this.health = this.maxHealth;
     this.koed = false;
     this.blocking = false;

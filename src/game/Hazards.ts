@@ -1,6 +1,6 @@
 import { Container, Graphics } from "pixi.js";
-import type { MapData, Rect } from "../core/MapTypes";
-import { effectiveHazards } from "../core/MapTypes";
+import type { MapData, Rect, Portal } from "../core/MapTypes";
+import { effectiveHazards, WHEEL_RADIUS, PORTAL_RADIUS } from "../core/MapTypes";
 import type { Fighter } from "../core/Fighter";
 import type { ParticleSystem } from "../effects/Particles";
 import type { ShockRingSystem } from "../effects/ShockRing";
@@ -30,10 +30,31 @@ interface CrumbleState {
 interface Dagger {
   x: number;
   y: number;
+  vx: number;
   vy: number;
   stuck: boolean;
   stuckTimer: number;
   hit: Set<Fighter>;
+}
+
+const WHEEL_SPIN_SPEED = 1.7; // rad/s
+const WHEEL_FIRE_INTERVAL = 1.05;
+const WHEEL_DAGGER_SPEED = 720;
+
+interface WheelState {
+  x: number;
+  y: number;
+  angle: number;
+  fireTimer: number;
+}
+
+const PORTAL_COLORS = [0x9d4dff, 0x2ee6ff, 0xffe14d, 0x35e07c];
+
+interface PortalState {
+  def: Portal;
+  color: number;
+  /** Fighters that just warped: they must leave both ends before warping again. */
+  disarmed: Set<Fighter>;
 }
 
 interface Lightning {
@@ -55,6 +76,8 @@ interface LavaBurst {
 export interface HazardHooks {
   addShake(amount: number): void;
   flash(amount: number): void;
+  /** A fighter was teleported; the renderer resets interpolation so it doesn't smear. */
+  teleported?(f: Fighter): void;
 }
 
 /**
@@ -72,6 +95,8 @@ export class HazardSystem {
   private daggers: Dagger[] = [];
   private lightnings: Lightning[] = [];
   private lavas: LavaBurst[] = [];
+  private wheels: WheelState[] = [];
+  private portals: PortalState[] = [];
   private eventTimer = 5;
   private eventPool: Array<"daggers" | "lightning" | "lava"> = [];
   private time = 0;
@@ -102,6 +127,17 @@ export class HazardSystem {
     this.daggers = [];
     this.lightnings = [];
     this.lavas = [];
+    this.wheels = (fightMap.daggerWheels ?? []).map((w, i) => ({
+      x: w.x,
+      y: w.y,
+      angle: i * 1.3, // desync wheels so they don't fire in unison
+      fireTimer: 1 + i * 0.4,
+    }));
+    this.portals = (fightMap.portals ?? []).map((def, i) => ({
+      def,
+      color: PORTAL_COLORS[i % PORTAL_COLORS.length],
+      disarmed: new Set<Fighter>(),
+    }));
     this.eventTimer = 4 + Math.random() * 4;
     this.time = 0;
     this.draw();
@@ -127,6 +163,8 @@ export class HazardSystem {
     this.daggers = [];
     this.lightnings = [];
     this.lavas = [];
+    for (const w of this.wheels) w.fireTimer = 1;
+    for (const p of this.portals) p.disarmed.clear();
     this.eventTimer = 4 + Math.random() * 4;
   }
 
@@ -142,9 +180,70 @@ export class HazardSystem {
         this.spawnRandomEvent();
       }
     }
+    this.updateWheels(dt);
+    this.updatePortals();
     this.updateDaggers(dt);
     this.updateLightning(dt);
     this.updateLava(dt);
+  }
+
+  private updateWheels(dt: number): void {
+    for (const w of this.wheels) {
+      w.angle += WHEEL_SPIN_SPEED * dt;
+      w.fireTimer -= dt;
+      if (w.fireTimer <= 0) {
+        w.fireTimer = WHEEL_FIRE_INTERVAL;
+        // Fire along the current blade direction: a rotating spray.
+        const cos = Math.cos(w.angle);
+        const sin = Math.sin(w.angle);
+        this.daggers.push({
+          x: w.x + cos * (WHEEL_RADIUS + 6),
+          y: w.y + sin * (WHEEL_RADIUS + 6),
+          vx: cos * WHEEL_DAGGER_SPEED,
+          vy: sin * WHEEL_DAGGER_SPEED,
+          stuck: false,
+          stuckTimer: 0,
+          hit: new Set(),
+        });
+        this.particles.burst(w.x + cos * WHEEL_RADIUS, w.y + sin * WHEEL_RADIUS, YELLOW, 3, {
+          speed: 120,
+          spread: 0.5,
+          gravity: 0,
+          size: 3,
+          glow: true,
+        });
+      }
+    }
+  }
+
+  private updatePortals(): void {
+    for (const ps of this.portals) {
+      for (const f of this.fighters) {
+        if (f.koed) continue;
+        const cx = f.x;
+        const cy = f.y - f.height / 2;
+        const d1 = Math.hypot(cx - ps.def.x1, cy - ps.def.y1);
+        const d2 = Math.hypot(cx - ps.def.x2, cy - ps.def.y2);
+        if (ps.disarmed.has(f)) {
+          if (d1 > PORTAL_RADIUS + 34 && d2 > PORTAL_RADIUS + 34) ps.disarmed.delete(f);
+          continue;
+        }
+        if (d1 < PORTAL_RADIUS || d2 < PORTAL_RADIUS) {
+          const exitX = d1 < PORTAL_RADIUS ? ps.def.x2 : ps.def.x1;
+          const exitY = d1 < PORTAL_RADIUS ? ps.def.y2 : ps.def.y1;
+          this.shockRings.spawn(cx, cy, ps.color, 80, 0.3, 5);
+          this.particles.burst(cx, cy, ps.color, 16, { speed: 300, spread: Math.PI * 2, gravity: 0, size: 4, glow: true });
+          f.x = exitX;
+          f.y = exitY + f.height / 2;
+          f.grounded = false;
+          ps.disarmed.add(f);
+          this.hooks.teleported?.(f);
+          this.shockRings.spawn(exitX, exitY, ps.color, 80, 0.3, 5);
+          this.particles.burst(exitX, exitY, ps.color, 16, { speed: 300, spread: Math.PI * 2, gravity: 0, size: 4, glow: true });
+          sound.whoosh(true);
+        }
+      }
+    }
   }
 
   private updateCrumbles(dt: number): void {
@@ -212,6 +311,7 @@ export class HazardSystem {
       this.daggers.push({
         x: 60 + Math.random() * (map.width - 120),
         y: -60 - Math.random() * 200,
+        vx: 0,
         vy: 950 + Math.random() * 250,
         stuck: false,
         stuckTimer: 0,
@@ -261,13 +361,15 @@ export class HazardSystem {
         continue;
       }
       const prevY = d.y;
+      d.x += d.vx * dt;
       d.y += d.vy * dt;
       // Hit fighters.
       for (const f of this.fighters) {
         if (d.hit.has(f) || f.koed) continue;
         if (Math.abs(d.x - f.x) < f.radius + 8 && d.y > f.y - f.height && d.y < f.y + 6) {
           d.hit.add(f);
-          this.hurtFighter(f, 7, (Math.random() * 2 - 1) * 140, -160, 0.24);
+          const kbX = d.vx !== 0 ? Math.sign(d.vx) * 240 : (Math.random() * 2 - 1) * 140;
+          this.hurtFighter(f, 7, kbX, -160, 0.24);
           this.particles.burst(d.x, d.y, YELLOW, 10, { speed: 300, spread: Math.PI * 2, gravity: 400, size: 4, glow: true });
           sound.hit(false, f.blocking, false);
           d.stuck = true;
@@ -278,16 +380,19 @@ export class HazardSystem {
       if (d.stuck) continue;
       // Stick into the first surface crossed this frame.
       for (const r of [...map.platforms, ...map.walls]) {
-        if (d.x >= r.x && d.x <= r.x + r.w && prevY <= r.y && d.y >= r.y) {
-          d.y = r.y + 4;
+        const fallingThrough = d.x >= r.x && d.x <= r.x + r.w && prevY <= r.y && d.y >= r.y;
+        // Wheel daggers fly in any direction; embed on entering a solid.
+        const inside = d.x >= r.x && d.x <= r.x + r.w && d.y >= r.y && d.y <= r.y + r.h;
+        if (fallingThrough || inside) {
+          if (fallingThrough) d.y = r.y + 4;
           d.stuck = true;
           d.stuckTimer = 2;
-          this.particles.dustPuff(d.x, r.y, WHITE, 4);
+          this.particles.dustPuff(d.x, d.y, WHITE, 4);
           sound.land(0.25);
           break;
         }
       }
-      if (d.y > map.height + 100) {
+      if (d.y > map.height + 100 || d.y < -300 || d.x < -100 || d.x > map.width + 100) {
         d.stuck = true;
         d.stuckTimer = 0;
       }
@@ -351,6 +456,28 @@ export class HazardSystem {
     this.lavas = this.lavas.filter((lv) => lv.phase === "warn" || lv.timer > 0);
   }
 
+  private drawPortal(x: number, y: number, color: number): void {
+    this.strokeRotatedEllipse(x, y, PORTAL_RADIUS * 0.55, PORTAL_RADIUS, this.time * 1.3, 5, color, 0.85);
+    this.strokeRotatedEllipse(x, y, PORTAL_RADIUS * 0.34, PORTAL_RADIUS * 0.66, -this.time * 2.1, 3, WHITE, 0.5);
+    const pulse = 0.35 + 0.2 * Math.sin(this.time * 5);
+    this.g.circle(x, y, PORTAL_RADIUS * 0.3);
+    this.g.fill({ color, alpha: pulse });
+  }
+
+  private strokeRotatedEllipse(x: number, y: number, rx: number, ry: number, rot: number, width: number, color: number, alpha: number): void {
+    const pts: number[] = [];
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    for (let i = 0; i < 26; i++) {
+      const t = (i / 26) * Math.PI * 2;
+      const ex = Math.cos(t) * rx;
+      const ey = Math.sin(t) * ry;
+      pts.push(x + ex * cos - ey * sin, y + ex * sin + ey * cos);
+    }
+    this.g.poly(pts);
+    this.g.stroke({ width, color, alpha });
+  }
+
   private lavaHeight(lv: LavaBurst): number {
     // Rises fast, holds, sinks at the end.
     const t = 1 - lv.timer / 1.4;
@@ -386,11 +513,40 @@ export class HazardSystem {
 
     for (const d of this.daggers) {
       const alpha = d.stuck ? Math.min(1, d.stuckTimer / 0.6) : 1;
-      this.g.moveTo(d.x, d.y - 26);
+      // Tail trails opposite the flight direction (straight up for falling daggers).
+      const len = Math.hypot(d.vx, d.vy) || 1;
+      const ux = d.vx / len;
+      const uy = d.vy / len || (d.vx === 0 ? 1 : 0);
+      this.g.moveTo(d.x - ux * 26, d.y - uy * 26);
       this.g.lineTo(d.x, d.y);
       this.g.stroke({ width: 4, color: WHITE, alpha });
       this.g.circle(d.x, d.y, 3);
       this.g.fill({ color: YELLOW, alpha });
+    }
+
+    // Spinning dagger wheels.
+    for (const w of this.wheels) {
+      this.g.circle(w.x, w.y, WHEEL_RADIUS);
+      this.g.stroke({ width: 4, color: YELLOW, alpha: 0.9 });
+      this.g.circle(w.x, w.y, 7);
+      this.g.fill({ color: YELLOW, alpha: 1 });
+      for (let i = 0; i < 4; i++) {
+        const a = w.angle + (i / 4) * Math.PI * 2;
+        const cos = Math.cos(a);
+        const sin = Math.sin(a);
+        this.g.moveTo(w.x + cos * 8, w.y + sin * 8);
+        this.g.lineTo(w.x + cos * WHEEL_RADIUS, w.y + sin * WHEEL_RADIUS);
+        this.g.stroke({ width: 4, color: YELLOW, alpha: 0.95 });
+        // Blade tip.
+        this.g.circle(w.x + cos * (WHEEL_RADIUS - 3), w.y + sin * (WHEEL_RADIUS - 3), 4);
+        this.g.fill({ color: WHITE, alpha: 0.95 });
+      }
+    }
+
+    // Portal swirls: nested counter-rotating ellipses.
+    for (const ps of this.portals) {
+      this.drawPortal(ps.def.x1, ps.def.y1, ps.color);
+      this.drawPortal(ps.def.x2, ps.def.y2, ps.color);
     }
 
     for (const l of this.lightnings) {

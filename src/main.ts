@@ -136,6 +136,14 @@ async function main() {
     flash: (a) => {
       screenFlash = Math.max(screenFlash, a);
     },
+    teleported: (f) => {
+      // Snap the interpolation buffer so the warp doesn't smear across the arena.
+      const prev = f === player1 ? p1Prev : f === player2 ? p2Prev : null;
+      if (prev) {
+        prev.x = f.x;
+        prev.y = f.y;
+      }
+    },
   });
   world.addChild(hazards.view);
 
@@ -315,7 +323,7 @@ async function main() {
   } as const;
   const controlsStyle = new TextStyle(controlsStyleOpts);
   const p1Controls = new Text({
-    text: "P1  A/D Move  W Jump  S Duck  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nDuck+Punch Uppercut   Duck+Kick Sweep   Run+Duck Slide   Run at wall Wall-Run   HiPunch throws weapon",
+    text: "P1  A/D Move  W Jump  S Duck  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nDuck+Punch Uppercut   Duck+Kick Sweep   Run+Duck Slide   Run at wall Wall-Run   Weapon: punches stab, HiPunch throws",
     style: controlsStyle,
   });
   const p2Controls = new Text({
@@ -1028,6 +1036,8 @@ async function main() {
     "ed-tool-wall": "wall",
     "ed-tool-poly": "poly",
     "ed-tool-crumble": "crumble",
+    "ed-tool-wheel": "wheel",
+    "ed-tool-portal": "portal",
     "ed-tool-spawn1": "spawn1",
     "ed-tool-spawn2": "spawn2",
     "ed-tool-erase": "erase",

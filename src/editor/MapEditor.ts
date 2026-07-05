@@ -1,9 +1,11 @@
 import { Application, Container, Graphics } from "pixi.js";
 import type { MapData, Rect, PolyPoint } from "../core/MapTypes";
-import { cloneMap, pointInPolygon } from "../core/MapTypes";
+import { cloneMap, pointInPolygon, WHEEL_RADIUS, PORTAL_RADIUS } from "../core/MapTypes";
 import { applyBackground } from "../render/BackgroundLoader";
 
-export type EditorTool = "platform" | "wall" | "poly" | "crumble" | "spawn1" | "spawn2" | "erase";
+export type EditorTool = "platform" | "wall" | "poly" | "crumble" | "wheel" | "portal" | "spawn1" | "spawn2" | "erase";
+
+const PORTAL_COLORS = [0x9d4dff, 0x2ee6ff, 0xffe14d, 0x35e07c];
 
 const POLY_CLOSE_DIST = 16;
 
@@ -22,6 +24,7 @@ export class MapEditor {
   private dragStart: { x: number; y: number } | null = null;
   private dragCurrent: { x: number; y: number } | null = null;
   private polyDraft: PolyPoint[] = [];
+  private portalDraft: { x: number; y: number } | null = null; // first end of an in-progress pair
   private hoverPoint: { x: number; y: number } | null = null;
   private active = false;
   private toWorld: (x: number, y: number) => { x: number; y: number };
@@ -61,12 +64,14 @@ export class MapEditor {
   setTool(tool: EditorTool): void {
     this.tool = tool;
     if (tool !== "poly") this.polyDraft = [];
+    if (tool !== "portal") this.portalDraft = null;
     this.redraw();
   }
 
-  /** Abandons the in-progress polygon (wired to Escape). */
+  /** Abandons the in-progress polygon or portal pair (wired to Escape). */
   cancelPolyDraft(): void {
     this.polyDraft = [];
+    this.portalDraft = null;
     this.redraw();
   }
 
@@ -85,6 +90,11 @@ export class MapEditor {
       else this.map.polygons?.pop();
     } else if (this.tool === "wall") {
       this.map.walls.pop();
+    } else if (this.tool === "wheel") {
+      this.map.daggerWheels?.pop();
+    } else if (this.tool === "portal") {
+      if (this.portalDraft) this.portalDraft = null;
+      else this.map.portals?.pop();
     } else {
       this.map.platforms.pop();
     }
@@ -95,7 +105,10 @@ export class MapEditor {
     this.map.platforms = [];
     this.map.walls = [];
     this.map.polygons = [];
+    this.map.daggerWheels = [];
+    this.map.portals = [];
     this.polyDraft = [];
+    this.portalDraft = null;
     this.redraw();
   }
 
@@ -132,6 +145,24 @@ export class MapEditor {
       }
       return;
     }
+    if (this.tool === "wheel") {
+      this.map.daggerWheels = this.map.daggerWheels ?? [];
+      this.map.daggerWheels.push({ x: p.x, y: p.y });
+      this.redraw();
+      return;
+    }
+    if (this.tool === "portal") {
+      // Two clicks: entry, then exit.
+      if (!this.portalDraft) {
+        this.portalDraft = { x: p.x, y: p.y };
+      } else {
+        this.map.portals = this.map.portals ?? [];
+        this.map.portals.push({ x1: this.portalDraft.x, y1: this.portalDraft.y, x2: p.x, y2: p.y });
+        this.portalDraft = null;
+      }
+      this.redraw();
+      return;
+    }
     if (this.tool === "poly") {
       // Clicking near the first point (with 3+ points down) closes the shape.
       const first = this.polyDraft[0];
@@ -152,6 +183,11 @@ export class MapEditor {
   private handlePointerMove(e: PointerEvent): void {
     if (!this.active) return;
     if (this.tool === "poly" && this.polyDraft.length) {
+      this.hoverPoint = this.localPoint(e);
+      this.redraw();
+      return;
+    }
+    if (this.tool === "portal" && this.portalDraft) {
       this.hoverPoint = this.localPoint(e);
       this.redraw();
       return;
@@ -181,6 +217,22 @@ export class MapEditor {
 
   private eraseAt(x: number, y: number): void {
     const hit = (r: Rect) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    for (let i = (this.map.daggerWheels?.length ?? 0) - 1; i >= 0; i--) {
+      const w = this.map.daggerWheels![i];
+      if (Math.hypot(x - w.x, y - w.y) < WHEEL_RADIUS + 6) {
+        this.map.daggerWheels!.splice(i, 1);
+        this.redraw();
+        return;
+      }
+    }
+    for (let i = (this.map.portals?.length ?? 0) - 1; i >= 0; i--) {
+      const p = this.map.portals![i];
+      if (Math.hypot(x - p.x1, y - p.y1) < PORTAL_RADIUS || Math.hypot(x - p.x2, y - p.y2) < PORTAL_RADIUS) {
+        this.map.portals!.splice(i, 1);
+        this.redraw();
+        return;
+      }
+    }
     for (let i = (this.map.polygons?.length ?? 0) - 1; i >= 0; i--) {
       if (pointInPolygon(x, y, this.map.polygons![i].points)) {
         this.map.polygons!.splice(i, 1);
@@ -233,6 +285,27 @@ export class MapEditor {
       this.g.stroke({ width: 3, color: WHITE, alpha: 0.9 });
     }
 
+    for (const w of this.map.daggerWheels ?? []) {
+      this.drawWheelIcon(w.x, w.y);
+    }
+    (this.map.portals ?? []).forEach((p, i) => {
+      const color = PORTAL_COLORS[i % PORTAL_COLORS.length];
+      this.drawPortalIcon(p.x1, p.y1, color);
+      this.drawPortalIcon(p.x2, p.y2, color);
+      this.g.moveTo(p.x1, p.y1);
+      this.g.lineTo(p.x2, p.y2);
+      this.g.stroke({ width: 2, color, alpha: 0.3 });
+    });
+    if (this.portalDraft) {
+      const color = PORTAL_COLORS[(this.map.portals?.length ?? 0) % PORTAL_COLORS.length];
+      this.drawPortalIcon(this.portalDraft.x, this.portalDraft.y, color);
+      if (this.hoverPoint) {
+        this.g.moveTo(this.portalDraft.x, this.portalDraft.y);
+        this.g.lineTo(this.hoverPoint.x, this.hoverPoint.y);
+        this.g.stroke({ width: 2, color, alpha: 0.5 });
+      }
+    }
+
     if (this.dragStart && this.dragCurrent) {
       const rect = normalizeRect(this.dragStart, this.dragCurrent);
       this.g.rect(rect.x, rect.y, rect.w, rect.h);
@@ -267,6 +340,26 @@ export class MapEditor {
     this.g.stroke({ width: 3, color: CYAN, alpha: 1 });
     this.g.circle(this.map.spawn2.x, this.map.spawn2.y, 14);
     this.g.stroke({ width: 3, color: MAGENTA, alpha: 1 });
+  }
+
+  private drawWheelIcon(x: number, y: number): void {
+    this.g.circle(x, y, WHEEL_RADIUS);
+    this.g.stroke({ width: 3, color: YELLOW, alpha: 0.9 });
+    this.g.circle(x, y, 6);
+    this.g.fill({ color: YELLOW, alpha: 0.9 });
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      this.g.moveTo(x + Math.cos(a) * 8, y + Math.sin(a) * 8);
+      this.g.lineTo(x + Math.cos(a) * WHEEL_RADIUS, y + Math.sin(a) * WHEEL_RADIUS);
+      this.g.stroke({ width: 3, color: YELLOW, alpha: 0.9 });
+    }
+  }
+
+  private drawPortalIcon(x: number, y: number, color: number): void {
+    this.g.ellipse(x, y, PORTAL_RADIUS * 0.55, PORTAL_RADIUS);
+    this.g.stroke({ width: 4, color, alpha: 0.9 });
+    this.g.ellipse(x, y, PORTAL_RADIUS * 0.3, PORTAL_RADIUS * 0.62);
+    this.g.stroke({ width: 2, color, alpha: 0.6 });
   }
 }
 

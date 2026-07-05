@@ -201,12 +201,16 @@ function hurtbox(f: Fighter): Rect {
   };
 }
 
+/** Punch-type attacks strike with a held weapon, so its reach extends them. */
+const WEAPON_REACH_KINDS: ReadonlySet<AttackKind> = new Set(["lowPunch", "highPunch", "airPunch"]);
+
 function hitbox(f: Fighter): Rect | null {
   if (f.attackPhase !== "active" || !f.attackKind) return null;
   const data = ATTACKS[f.attackKind];
+  const range = data.range + (WEAPON_REACH_KINDS.has(f.attackKind) ? f.weaponReach : 0);
   const originX = f.x + f.facing * 18;
   const nearX = originX;
-  const farX = originX + f.facing * data.range;
+  const farX = originX + f.facing * range;
   return {
     minX: Math.min(nearX, farX),
     maxX: Math.max(nearX, farX),

@@ -67,6 +67,7 @@ export class WeaponSystem {
     this.fightMap = fightMap;
     this.fighters = fighters;
     this.enabled = enabled;
+    for (const f of fighters) f.weaponReach = 0;
     this.held.clear();
     this.drops = [];
     this.projectiles = [];
@@ -76,6 +77,7 @@ export class WeaponSystem {
   }
 
   resetRound(): void {
+    for (const f of this.fighters) f.weaponReach = 0;
     this.held.clear();
     this.drops = [];
     this.projectiles = [];
@@ -96,6 +98,7 @@ export class WeaponSystem {
     const kind = this.held.get(f);
     if (!kind || f.koed) return false;
     this.held.delete(f);
+    f.weaponReach = 0;
     const speed = kind === "spear" ? 1250 : 980;
     this.projectiles.push({
       kind,
@@ -155,6 +158,8 @@ export class WeaponSystem {
         if (!d.settled) continue;
         if (Math.abs(f.x - d.x) < f.radius + 22 && Math.abs(f.y - d.y) < 30) {
           this.held.set(f, d.kind);
+          // A held weapon is also a melee weapon: punches strike with it.
+          f.weaponReach = d.kind === "spear" ? 55 : 22;
           d.settled = false;
           this.drops = this.drops.filter((x) => x !== d);
           this.shockRings.spawn(d.x, d.y - 30, YELLOW, 50, 0.25, 4);
@@ -262,9 +267,21 @@ export class WeaponSystem {
       this.drawWeapon(p.kind, p.x, p.y, p.rotation, alpha);
     }
 
-    // Held weapon floats behind the carrier's head.
+    // Held weapon sits in the lead hand at the fighter's side, and thrusts
+    // forward with punches (the melee poke that weaponReach backs up).
     for (const [f, kind] of this.held) {
-      this.drawWeapon(kind, f.x - f.facing * 26, f.y - f.height - 14, f.facing > 0 ? -Math.PI / 5 : Math.PI + Math.PI / 5, 0.95);
+      const dir = f.facing;
+      const punching = f.attackKind === "lowPunch" || f.attackKind === "highPunch" || f.attackKind === "airPunch";
+      if (punching && f.attackPhase) {
+        const ext = f.attackPhase === "active" ? 1 : f.attackPhase === "recovery" ? 0.55 : 0.1;
+        const half = kind === "spear" ? 34 : 26;
+        const hx = f.x + dir * (14 + half + ext * (16 + f.weaponReach * 0.6));
+        const hy = f.y - f.height * 0.6;
+        this.drawWeapon(kind, hx, hy, dir > 0 ? 0 : Math.PI, 0.95);
+      } else {
+        const angle = kind === "spear" ? -0.28 : -0.72; // spear near-level, sword angled up
+        this.drawWeapon(kind, f.x + dir * 22, f.y - f.height * 0.46, dir > 0 ? angle : Math.PI - angle, 0.95);
+      }
     }
   }
 
