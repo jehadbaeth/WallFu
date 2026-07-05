@@ -340,36 +340,40 @@ class SoundEngine {
       if (!this.sample(pick(PLANK), { volume: 0.65, rate: 1.25 })) {
         this.noiseHit(0.08, { gain: 0.22, filterFreq: this.vary(2400) });
       }
-      this.kungfuCrack({ f0: 1500, f1: 950, q: 4, dur: 0.05 }, { gain: 0.14, echoSend: 0.15 });
+      this.kungfuCrack({ f0: 1500, f1: 950, q: 4, dur: 0.05 }, { gain: 0.7, echoSend: 0.15 });
       return;
     }
-    // Old kung fu dub anatomy: whip-crack sweep leads, resonant "kow" pitch
-    // drop underneath, slapback echo behind everything, meat samples low in
-    // the mix. Heavies get the doubled flam crack the movies loved.
+    // Movie punch anatomy: a bass BOOM slams first, a whip-crack sweep bites
+    // on top, slapback echo rings behind, pitched-down samples add meat.
+    // NOTE: the high-Q bandpass eats ~20dB of the noise, so crack gains run
+    // far above 1.0 on purpose - the master compressor catches the sum.
     const recipe = pick(kick ? KICK_CRACKS : PUNCH_CRACKS);
     const mult = heavy ? 0.82 : 1;
     this.kungfuCrack(
       { f0: recipe.f0 * mult, f1: recipe.f1 * mult, q: recipe.q, dur: recipe.dur * (heavy ? 1.35 : 1) },
-      { gain: heavy ? 0.52 : 0.38 },
+      { gain: heavy ? 3.2 : 2.4 },
     );
     if (heavy) {
+      // The doubled flam crack the old dubs loved on power blows.
       this.kungfuCrack(
         { f0: recipe.f0 * 0.6, f1: recipe.f1 * 0.55, q: recipe.q, dur: recipe.dur * 1.6 },
-        { gain: 0.3, when: 0.03 },
+        { gain: 1.9, when: 0.03 },
       );
     }
-    // The "kow": a fast resonant drop that gives the crack its body.
+    // The body: the compressed low "DUN" that makes meme punches feel huge.
+    this.tone(this.vary(kick ? 150 : 190, 0.1), heavy ? 0.2 : 0.13, { type: "sine", endFreq: 45, gain: heavy ? 0.8 : 0.55 });
+    // The "kow": resonant drop gluing crack to boom.
     this.tone(this.vary(kick ? 320 : 480, 0.15), heavy ? 0.16 : 0.1, {
       type: "triangle",
       endFreq: kick ? 90 : 130,
-      gain: heavy ? 0.3 : 0.2,
+      gain: heavy ? 0.42 : 0.3,
       echo: true,
     });
-    // Meat and chest weight underneath, quieter than before: the crack leads.
-    this.sample(pick(heavy ? PUNCH_HEAVY : PUNCH_MEDIUM), { volume: heavy ? 0.6 : 0.45, rate: kick ? 0.85 : 1, rateVar: 0.1 });
-    this.sample(pick(SOFT_MEDIUM), { volume: heavy ? 0.5 : 0.3, rate: kick ? 0.8 : 0.95, when: 0.008 });
-    const sub = kick ? (heavy ? 58 : 90) : heavy ? 80 : 120;
-    this.tone(this.vary(sub), heavy ? 0.24 : 0.1, { type: "sine", endFreq: 30, gain: heavy ? 0.45 : 0.2 });
+    // Meat: punch samples pitched well down so they thump instead of slap.
+    this.sample(pick(heavy ? PUNCH_HEAVY : PUNCH_MEDIUM), { volume: heavy ? 0.9 : 0.7, rate: kick ? 0.72 : 0.8, rateVar: 0.08 });
+    this.sample(pick(SOFT_MEDIUM), { volume: heavy ? 0.6 : 0.4, rate: 0.8, when: 0.008 });
+    const sub = kick ? (heavy ? 55 : 85) : heavy ? 75 : 110;
+    this.tone(this.vary(sub), heavy ? 0.26 : 0.12, { type: "sine", endFreq: 28, gain: heavy ? 0.55 : 0.3 });
   }
 
   wallJump(): void {
@@ -388,9 +392,10 @@ class SoundEngine {
 
   ko(): void {
     // The finisher: triple flam crack drowning in echo, then the fall.
-    this.kungfuCrack({ f0: 2400, f1: 600, q: 8, dur: 0.16 }, { gain: 0.55, echoSend: 0.8 });
-    this.kungfuCrack({ f0: 1500, f1: 380, q: 8, dur: 0.2 }, { gain: 0.4, when: 0.05, echoSend: 0.8 });
-    this.kungfuCrack({ f0: 900, f1: 250, q: 7, dur: 0.26 }, { gain: 0.32, when: 0.12, echoSend: 0.8 });
+    this.kungfuCrack({ f0: 2400, f1: 600, q: 8, dur: 0.16 }, { gain: 3.4, echoSend: 0.8 });
+    this.kungfuCrack({ f0: 1500, f1: 380, q: 8, dur: 0.2 }, { gain: 2.6, when: 0.05, echoSend: 0.8 });
+    this.kungfuCrack({ f0: 900, f1: 250, q: 7, dur: 0.26 }, { gain: 2.0, when: 0.12, echoSend: 0.8 });
+    this.tone(170, 0.3, { type: "sine", endFreq: 40, gain: 0.85 });
     this.sample(pick(PUNCH_HEAVY), { volume: 0.9, rate: 0.72, echo: true });
     this.sample(pick(SOFT_HEAVY), { volume: 0.9, rate: 0.8, when: 0.02, echo: true });
     this.tone(520, 0.55, { type: "sawtooth", endFreq: 35, gain: 0.28 });
