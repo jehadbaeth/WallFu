@@ -80,6 +80,27 @@ function pick<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+// Old kung fu dub whip-cracks: swept bandpass noise recipes, rotated per hit
+// like a dubbing studio's foley shelf so no two hits sound identical.
+interface CrackRecipe {
+  f0: number; // sweep start (Hz)
+  f1: number; // sweep end
+  q: number; // bandpass resonance
+  dur: number; // seconds
+}
+
+const PUNCH_CRACKS: CrackRecipe[] = [
+  { f0: 2600, f1: 900, q: 7, dur: 0.09 },
+  { f0: 3100, f1: 1250, q: 6, dur: 0.07 },
+  { f0: 2100, f1: 650, q: 8, dur: 0.12 },
+  { f0: 2800, f1: 800, q: 9, dur: 0.1 },
+];
+const KICK_CRACKS: CrackRecipe[] = [
+  { f0: 1700, f1: 500, q: 7, dur: 0.12 },
+  { f0: 1400, f1: 420, q: 8, dur: 0.14 },
+  { f0: 2000, f1: 600, q: 6, dur: 0.1 },
+];
+
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -202,10 +223,10 @@ class SoundEngine {
     return true;
   }
 
-  private tone(freq: number, duration: number, opts?: { type?: OscType; endFreq?: number; gain?: number; attack?: number }): void {
+  private tone(freq: number, duration: number, opts?: { type?: OscType; endFreq?: number; gain?: number; attack?: number; echo?: boolean; when?: number }): void {
     const ctx = this.ensureContext();
     if (!ctx || !this.master) return;
-    const now = ctx.currentTime;
+    const now = ctx.currentTime + (opts?.when ?? 0);
     const osc = ctx.createOscillator();
     osc.type = opts?.type ?? "sine";
     osc.frequency.setValueAtTime(freq, now);
@@ -218,8 +239,42 @@ class SoundEngine {
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     osc.connect(gain);
     gain.connect(this.master);
+    if (opts?.echo && this.echo) gain.connect(this.echo);
     osc.start(now);
     osc.stop(now + duration + 0.02);
+  }
+
+  /**
+   * The Shaw Brothers whip-crack: a resonant bandpass sweep over a noise
+   * burst, sent hot into the slapback echo. THE dubbed-kung-fu hit sound.
+   */
+  private kungfuCrack(recipe: CrackRecipe, opts?: { gain?: number; when?: number; echoSend?: number }): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.master || !this.noiseBuffer) return;
+    const now = ctx.currentTime + (opts?.when ?? 0);
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = recipe.q;
+    bp.frequency.setValueAtTime(this.vary(recipe.f0, 0.08), now);
+    bp.frequency.exponentialRampToValueAtTime(recipe.f1, now + recipe.dur);
+    const gain = ctx.createGain();
+    const peak = opts?.gain ?? 0.4;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(peak, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + recipe.dur);
+    src.connect(bp);
+    bp.connect(gain);
+    gain.connect(this.master);
+    if (this.echo) {
+      const send = ctx.createGain();
+      send.gain.value = opts?.echoSend ?? 0.55;
+      gain.connect(send);
+      send.connect(this.echo);
+    }
+    src.start(now);
+    src.stop(now + recipe.dur + 0.03);
   }
 
   private noiseHit(duration: number, opts?: { gain?: number; filterFreq?: number; type?: BiquadFilterType }): void {
@@ -281,24 +336,40 @@ class SoundEngine {
 
   hit(heavy: boolean, blocked: boolean, kick = false): void {
     if (blocked) {
-      if (!this.sample(pick(PLANK), { volume: 0.6, rate: 1.2 })) {
+      // Blocked: dry wooden knock with just a hint of crack, no echo drama.
+      if (!this.sample(pick(PLANK), { volume: 0.65, rate: 1.25 })) {
         this.noiseHit(0.08, { gain: 0.22, filterFreq: this.vary(2400) });
       }
+      this.kungfuCrack({ f0: 1500, f1: 950, q: 4, dur: 0.05 }, { gain: 0.14, echoSend: 0.15 });
       return;
     }
-    // Three layers: punch crack, body thud underneath, synth sub for chest weight.
-    const played = this.sample(pick(heavy ? PUNCH_HEAVY : PUNCH_MEDIUM), {
-      volume: heavy ? 1.15 : 0.95,
-      rate: kick ? 0.85 : 1,
-      rateVar: 0.1,
-    });
-    this.sample(pick(SOFT_MEDIUM), { volume: heavy ? 0.75 : 0.45, rate: kick ? 0.8 : 0.95, when: 0.008 });
-    if (!played) {
-      const crack = kick ? (heavy ? 300 : 520) : heavy ? 480 : 1000;
-      this.noiseHit(heavy ? 0.16 : 0.08, { gain: heavy ? 0.42 : 0.26, filterFreq: this.vary(crack) });
+    // Old kung fu dub anatomy: whip-crack sweep leads, resonant "kow" pitch
+    // drop underneath, slapback echo behind everything, meat samples low in
+    // the mix. Heavies get the doubled flam crack the movies loved.
+    const recipe = pick(kick ? KICK_CRACKS : PUNCH_CRACKS);
+    const mult = heavy ? 0.82 : 1;
+    this.kungfuCrack(
+      { f0: recipe.f0 * mult, f1: recipe.f1 * mult, q: recipe.q, dur: recipe.dur * (heavy ? 1.35 : 1) },
+      { gain: heavy ? 0.52 : 0.38 },
+    );
+    if (heavy) {
+      this.kungfuCrack(
+        { f0: recipe.f0 * 0.6, f1: recipe.f1 * 0.55, q: recipe.q, dur: recipe.dur * 1.6 },
+        { gain: 0.3, when: 0.03 },
+      );
     }
-    const sub = kick ? (heavy ? 58 : 90) : heavy ? 80 : 125;
-    this.tone(this.vary(sub), heavy ? 0.26 : 0.11, { type: "sine", endFreq: 30, gain: heavy ? 0.5 : 0.24 });
+    // The "kow": a fast resonant drop that gives the crack its body.
+    this.tone(this.vary(kick ? 320 : 480, 0.15), heavy ? 0.16 : 0.1, {
+      type: "triangle",
+      endFreq: kick ? 90 : 130,
+      gain: heavy ? 0.3 : 0.2,
+      echo: true,
+    });
+    // Meat and chest weight underneath, quieter than before: the crack leads.
+    this.sample(pick(heavy ? PUNCH_HEAVY : PUNCH_MEDIUM), { volume: heavy ? 0.6 : 0.45, rate: kick ? 0.85 : 1, rateVar: 0.1 });
+    this.sample(pick(SOFT_MEDIUM), { volume: heavy ? 0.5 : 0.3, rate: kick ? 0.8 : 0.95, when: 0.008 });
+    const sub = kick ? (heavy ? 58 : 90) : heavy ? 80 : 120;
+    this.tone(this.vary(sub), heavy ? 0.24 : 0.1, { type: "sine", endFreq: 30, gain: heavy ? 0.45 : 0.2 });
   }
 
   wallJump(): void {
@@ -316,10 +387,14 @@ class SoundEngine {
   }
 
   ko(): void {
-    this.sample(pick(PUNCH_HEAVY), { volume: 1.2, rate: 0.72, echo: true });
+    // The finisher: triple flam crack drowning in echo, then the fall.
+    this.kungfuCrack({ f0: 2400, f1: 600, q: 8, dur: 0.16 }, { gain: 0.55, echoSend: 0.8 });
+    this.kungfuCrack({ f0: 1500, f1: 380, q: 8, dur: 0.2 }, { gain: 0.4, when: 0.05, echoSend: 0.8 });
+    this.kungfuCrack({ f0: 900, f1: 250, q: 7, dur: 0.26 }, { gain: 0.32, when: 0.12, echoSend: 0.8 });
+    this.sample(pick(PUNCH_HEAVY), { volume: 0.9, rate: 0.72, echo: true });
     this.sample(pick(SOFT_HEAVY), { volume: 0.9, rate: 0.8, when: 0.02, echo: true });
-    this.tone(520, 0.55, { type: "sawtooth", endFreq: 35, gain: 0.3 });
-    this.noiseHit(0.3, { gain: 0.24, filterFreq: 280 });
+    this.tone(520, 0.55, { type: "sawtooth", endFreq: 35, gain: 0.28 });
+    this.noiseHit(0.3, { gain: 0.22, filterFreq: 280 });
   }
 
   click(): void {
