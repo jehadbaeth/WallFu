@@ -270,5 +270,40 @@
     </div>
 
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      // Anonymous telemetry via GoatCounter: visit count, time, and country only.
+      // Loaded on the public site only so LAN playtests don't count as players.
+      (function () {
+        if (!location.hostname.endsWith("github.io")) return;
+        var s = document.createElement("script");
+        s.async = true;
+        s.src = "https://gc.zgo.at/count.js";
+        s.dataset.goatcounter = "https://wallfu.goatcounter.com/count";
+        document.head.appendChild(s);
+
+        // Session-length histogram: one bucketed event when the tab first goes
+        // to the background (close, switch away, phone lock).
+        var start = Date.now();
+        var sent = false;
+        function bucket(mins) {
+          if (mins < 1) return "under-1min";
+          if (mins < 5) return "1-5min";
+          if (mins < 15) return "5-15min";
+          if (mins < 45) return "15-45min";
+          return "over-45min";
+        }
+        document.addEventListener("visibilitychange", function () {
+          if (document.visibilityState !== "hidden" || sent) return;
+          var gc = window.goatcounter;
+          if (!gc || !gc.count) return;
+          sent = true;
+          gc.count({
+            path: "session-" + bucket((Date.now() - start) / 60000),
+            title: "Session length",
+            event: true,
+          });
+        });
+      })();
+    </script>
   </body>
 </html>
