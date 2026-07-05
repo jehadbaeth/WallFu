@@ -109,7 +109,8 @@ export class WeaponSystem {
       stuckTimer: 0,
       hitSet: new Set(),
     });
-    sound.whoosh(true);
+    if (kind === "sword") sound.slice();
+    else sound.whoosh(true);
     this.particles.streakBurst(f.x + f.facing * 30, f.y - f.height * 0.6, WHITE, 6, {
       angle: f.facing > 0 ? 0 : Math.PI,
       speed: 400,
@@ -189,6 +190,7 @@ export class WeaponSystem {
           this.particles.burst(p.x, p.y, YELLOW, sword ? 22 : 14, { speed: 460, spread: Math.PI * 1.5, gravity: 500, size: 5, glow: true });
           this.shockRings.spawn(p.x, p.y, WHITE, sword ? 100 : 70, 0.3, 6);
           this.hooks.addShake(sword ? 0.4 : 0.3);
+          if (sword && !blocked) sound.slice();
           sound.hit(sword, blocked, false);
           p.hitSet.add(f);
           if (!sword || blocked) {

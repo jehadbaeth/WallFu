@@ -5,6 +5,7 @@ export type AttackKind =
   | "lowPunch"
   | "highKick"
   | "lowKick"
+  | "spinSweep"
   | "airPunch"
   | "airKick"
   | "diveKick"
@@ -85,7 +86,21 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     range: 84,
     height: 120,
     hitstop: 0.09,
-    bottomOffset: -48,
+    bottomOffset: -72, // head-level only: ducking goes clean under it
+  },
+  // Down+kick: spinning ankle sweep, hits low, pops them up. Duck-friendly.
+  spinSweep: {
+    startup: 0.09,
+    active: 0.16,
+    recovery: 0.22,
+    damage: 8,
+    knockback: 220,
+    upKnockback: 540,
+    hitstun: 0.5,
+    range: 78,
+    height: 44,
+    hitstop: 0.06,
+    bottomOffset: 0,
   },
   airPunch: {
     startup: 0.04,
@@ -159,7 +174,7 @@ export function isHeavyKind(kind: AttackKind): boolean {
 
 /** Kicks get a heavier, lower-pitched impact sound than punches. */
 export function isKickKind(kind: AttackKind): boolean {
-  return kind === "highKick" || kind === "lowKick" || kind === "airKick" || kind === "diveKick";
+  return kind === "highKick" || kind === "lowKick" || kind === "spinSweep" || kind === "airKick" || kind === "diveKick";
 }
 
 interface Rect {
@@ -172,10 +187,12 @@ interface Rect {
 const HURT_HALF_WIDTH = 26;
 
 function hurtbox(f: Fighter): Rect {
+  // Ducking halves the target: high attacks whiff clean over a crouched fighter.
+  const height = f.crouching ? f.height * 0.5 : f.height;
   return {
     minX: f.x - HURT_HALF_WIDTH,
     maxX: f.x + HURT_HALF_WIDTH,
-    minY: f.y - f.height,
+    minY: f.y - height,
     maxY: f.y,
   };
 }

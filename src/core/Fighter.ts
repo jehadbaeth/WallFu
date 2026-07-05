@@ -45,6 +45,7 @@ const LUNGE_SPEED: Partial<Record<AttackKind, number>> = {
   highPunch: 300,
   lowKick: 240,
   highKick: 560,
+  spinSweep: 150,
 };
 
 const AERIAL_KINDS: Set<AttackKind> = new Set(["airPunch", "airKick", "diveKick"]);
@@ -74,6 +75,9 @@ export class Fighter {
 
   /** -1 = wall to the left, 1 = wall to the right, 0 = no wall contact. Updated once per frame from the previous physics step. */
   touchingWallSide: -1 | 0 | 1 = 0;
+
+  /** Ducking: holding down while grounded. Shrinks the hurtbox so high attacks whiff. */
+  crouching = false;
 
   radius = 22; // half-width for collision, feet-to-hip visual scale derives from this
   height = 130;
@@ -120,6 +124,7 @@ export class Fighter {
     this.dashTimer = 0;
     this.dashCooldown = 0;
     this.touchingWallSide = 0;
+    this.crouching = false;
     this.health = this.maxHealth;
     this.koed = false;
     this.blocking = false;
@@ -160,8 +165,11 @@ export class Fighter {
       else if (punchPressed) kind = "airPunch";
       else kind = "airKick";
     } else if (punchPressed && intent.fastFall) {
-      // Classic down+punch uppercut.
+      // Classic MK duck+punch uppercut.
       kind = "launcher";
+    } else if (kickPressed && intent.fastFall) {
+      // Duck+kick: spinning ankle sweep.
+      kind = "spinSweep";
     } else if (intent.highPunchPressed) {
       kind = "highPunch";
     } else if (intent.lowPunchPressed) {
@@ -202,6 +210,7 @@ export class Fighter {
     if (this.hitstunTimer > 0) {
       this.hitstunTimer -= dt;
       this.blocking = false;
+      this.crouching = false;
       let gravity = GRAVITY;
       this.vy += gravity * dt;
       if (this.vy > MAX_FALL_SPEED) this.vy = MAX_FALL_SPEED;
@@ -258,9 +267,10 @@ export class Fighter {
       if (kind === "diveKick" && this.attackPhase === "active") {
         this.vx = this.facing * DIVE_KICK_VX;
         this.vy = DIVE_KICK_VY;
-      } else if (kind === "airKick" && this.attackPhase === "active") {
-        // Hold the diagonal: forward drive while gravity pulls the arc down.
+      } else if (kind === "airKick" && !this.grounded) {
+        // MK jump kick: fully committed to the diagonal descent until landing.
         this.vx = this.facing * Math.max(Math.abs(this.vx), AIR_KICK_VX);
+        if (this.vy < AIR_KICK_VY * 0.6) this.vy = AIR_KICK_VY * 0.6;
       } else if (kind === "dashAttack" && this.attackPhase !== "recovery") {
         this.vx = this.facing * DASH_ATTACK_SPEED;
       } else if (this.grounded) {
@@ -275,6 +285,7 @@ export class Fighter {
       }
     } else {
       this.blocking = this.grounded && intent.block;
+      this.crouching = this.grounded && intent.fastFall && !this.blocking && !this.isDashing;
 
       if (!this.blocking && intent.dashPressed && this.dashCooldown <= 0 && !this.isDashing) {
         this.dashTimer = DASH_DURATION;
@@ -295,7 +306,7 @@ export class Fighter {
       if (intent.moveX !== 0 && !this.blocking) this.facing = intent.moveX;
       if (wasFacing !== this.facing) this.events.push({ type: "turn" });
 
-      const targetVx = this.blocking ? 0 : intent.moveX * MOVE_SPEED;
+      const targetVx = this.blocking || this.crouching ? 0 : intent.moveX * MOVE_SPEED;
       const accel = this.grounded ? GROUND_ACCEL : AIR_ACCEL;
       if (targetVx !== 0) {
         this.vx = moveToward(this.vx, targetVx, accel * dt);

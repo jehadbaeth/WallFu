@@ -29,6 +29,8 @@ const SFX_FILES = [
   "cloth2.ogg",
   "cloth3.ogg",
   "cloth4.ogg",
+  "knifeslice.ogg",
+  "knifeslice2.ogg",
   "click-001.ogg",
   "click-002.ogg",
   "confirmation-001.ogg",
@@ -71,6 +73,7 @@ const SOFT_HEAVY = ["impactsoft-heavy-000", "impactsoft-heavy-001", "impactsoft-
 const PLANK = ["impactplank-medium-000", "impactplank-medium-001"];
 const FOOTSTEPS = ["footstep-concrete-000", "footstep-concrete-001", "footstep-concrete-002"];
 const WHOOSHES = ["cloth1", "cloth2", "cloth3", "cloth4"];
+const SLICES = ["knifeslice", "knifeslice2"];
 const CLICKS = ["click-001", "click-002"];
 
 function pick<T>(items: readonly T[]): T {
@@ -96,6 +99,8 @@ class SoundEngine {
     this.loadSamples();
   }
 
+  private echo: DelayNode | null = null;
+
   private ensureContext(): AudioContext | null {
     if (this.volume <= 0 && !this.ctx) return null;
     if (!this.ctx) {
@@ -104,7 +109,26 @@ class SoundEngine {
       this.ctx = new Ctor();
       this.master = this.ctx.createGain();
       this.master.gain.value = this.volume;
-      this.master.connect(this.ctx.destination);
+      // Master compressor glues the mix and lets hits slam without clipping.
+      const compressor = this.ctx.createDynamicsCompressor();
+      compressor.threshold.value = -16;
+      compressor.knee.value = 12;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.16;
+      this.master.connect(compressor);
+      compressor.connect(this.ctx.destination);
+      // Short feedback echo bus: announcer lines and KOs get arcade-hall space.
+      this.echo = this.ctx.createDelay(0.5);
+      this.echo.delayTime.value = 0.17;
+      const feedback = this.ctx.createGain();
+      feedback.gain.value = 0.26;
+      const wet = this.ctx.createGain();
+      wet.gain.value = 0.22;
+      this.echo.connect(feedback);
+      feedback.connect(this.echo);
+      this.echo.connect(wet);
+      wet.connect(this.master);
       this.noiseBuffer = this.buildNoiseBuffer(this.ctx);
     }
     if (this.ctx.state === "suspended") void this.ctx.resume();
@@ -140,7 +164,7 @@ class SoundEngine {
   }
 
   /** Plays a sample by name. Returns false if not loaded (caller may fall back to synthesis). */
-  private sample(name: string, opts?: { volume?: number; rate?: number; rateVar?: number; when?: number }): boolean {
+  private sample(name: string, opts?: { volume?: number; rate?: number; rateVar?: number; when?: number; echo?: boolean }): boolean {
     const ctx = this.ensureContext();
     const buffer = this.buffers.get(name);
     if (!ctx || !this.master || !buffer) return false;
@@ -152,11 +176,12 @@ class SoundEngine {
     gain.gain.value = opts?.volume ?? 1;
     src.connect(gain);
     gain.connect(this.master);
+    if (opts?.echo && this.echo) gain.connect(this.echo);
     src.start(ctx.currentTime + (opts?.when ?? 0));
     return true;
   }
 
-  /** Plays announcer lines back to back (e.g. "round one" ... "fight"). Returns false if any line is missing. */
+  /** Plays announcer lines back to back (e.g. "round one" ... "fight") with arcade echo. */
   voice(names: string[], opts?: { volume?: number; gap?: number }): boolean {
     const ctx = this.ensureContext();
     if (!ctx || !this.master) return false;
@@ -167,9 +192,10 @@ class SoundEngine {
       const src = ctx.createBufferSource();
       src.buffer = buffer;
       const gain = ctx.createGain();
-      gain.gain.value = opts?.volume ?? 0.9;
+      gain.gain.value = opts?.volume ?? 1;
       src.connect(gain);
       gain.connect(this.master);
+      if (this.echo) gain.connect(this.echo);
       src.start(ctx.currentTime + when);
       when += buffer.duration + (opts?.gap ?? 0.08);
     }
@@ -221,50 +247,58 @@ class SoundEngine {
   }
 
   jump(): void {
-    if (!this.sample(pick(WHOOSHES), { volume: 0.7, rate: 1.5, rateVar: 0.12 })) {
+    if (!this.sample(pick(WHOOSHES), { volume: 0.9, rate: 1.55, rateVar: 0.12 })) {
       this.tone(this.vary(420), 0.11, { type: "square", endFreq: 760, gain: 0.14 });
     }
   }
 
   land(strength: number): void {
     const hard = strength > 0.45;
-    if (!this.sample(pick(hard ? SOFT_HEAVY : FOOTSTEPS), { volume: 0.5 + strength * 0.5, rate: hard ? 0.9 : 1.1 })) {
+    if (!this.sample(pick(hard ? SOFT_HEAVY : FOOTSTEPS), { volume: 0.6 + strength * 0.5, rate: hard ? 0.9 : 1.1 })) {
       this.noiseHit(0.07 + strength * 0.05, { gain: 0.18 + strength * 0.22, filterFreq: this.vary(220) });
     }
-    if (hard) this.tone(this.vary(70), 0.12, { type: "sine", endFreq: 40, gain: 0.2 });
+    if (hard) this.tone(this.vary(70), 0.12, { type: "sine", endFreq: 40, gain: 0.24 });
   }
 
   dash(): void {
-    if (!this.sample(pick(WHOOSHES), { volume: 0.8, rate: 1.15, rateVar: 0.1 })) {
+    if (!this.sample(pick(WHOOSHES), { volume: 1, rate: 1.15, rateVar: 0.1 })) {
       this.tone(this.vary(220), 0.13, { type: "sawtooth", endFreq: 60, gain: 0.12 });
     }
   }
 
   whoosh(big: boolean): void {
-    if (!this.sample(pick(WHOOSHES), { volume: big ? 0.75 : 0.5, rate: big ? 0.85 : 1.35, rateVar: 0.12 })) {
+    if (!this.sample(pick(WHOOSHES), { volume: big ? 1 : 0.7, rate: big ? 0.85 : 1.35, rateVar: 0.12 })) {
       this.noiseHit(big ? 0.14 : 0.08, { gain: big ? 0.13 : 0.08, filterFreq: big ? 900 : 1500 });
+    }
+  }
+
+  /** Blade swing/impact for the thrown sword. */
+  slice(): void {
+    if (!this.sample(pick(SLICES), { volume: 1, rateVar: 0.1 })) {
+      this.noiseHit(0.1, { gain: 0.3, filterFreq: this.vary(3200), type: "highpass" });
     }
   }
 
   hit(heavy: boolean, blocked: boolean, kick = false): void {
     if (blocked) {
-      if (!this.sample(pick(PLANK), { volume: 0.5, rate: 1.2 })) {
+      if (!this.sample(pick(PLANK), { volume: 0.6, rate: 1.2 })) {
         this.noiseHit(0.08, { gain: 0.22, filterFreq: this.vary(2400) });
       }
       return;
     }
-    // Real punch impact, pitched down for kicks/heavies, plus a synth sub layer for weight.
+    // Three layers: punch crack, body thud underneath, synth sub for chest weight.
     const played = this.sample(pick(heavy ? PUNCH_HEAVY : PUNCH_MEDIUM), {
-      volume: heavy ? 1 : 0.8,
+      volume: heavy ? 1.15 : 0.95,
       rate: kick ? 0.85 : 1,
       rateVar: 0.1,
     });
+    this.sample(pick(SOFT_MEDIUM), { volume: heavy ? 0.75 : 0.45, rate: kick ? 0.8 : 0.95, when: 0.008 });
     if (!played) {
       const crack = kick ? (heavy ? 300 : 520) : heavy ? 480 : 1000;
       this.noiseHit(heavy ? 0.16 : 0.08, { gain: heavy ? 0.42 : 0.26, filterFreq: this.vary(crack) });
     }
-    const sub = kick ? (heavy ? 62 : 95) : heavy ? 85 : 130;
-    this.tone(this.vary(sub), heavy ? 0.24 : 0.1, { type: "sine", endFreq: 32, gain: heavy ? 0.4 : 0.18 });
+    const sub = kick ? (heavy ? 58 : 90) : heavy ? 80 : 125;
+    this.tone(this.vary(sub), heavy ? 0.26 : 0.11, { type: "sine", endFreq: 30, gain: heavy ? 0.5 : 0.24 });
   }
 
   wallJump(): void {
@@ -282,7 +316,8 @@ class SoundEngine {
   }
 
   ko(): void {
-    this.sample(pick(PUNCH_HEAVY), { volume: 1, rate: 0.75 });
+    this.sample(pick(PUNCH_HEAVY), { volume: 1.2, rate: 0.72, echo: true });
+    this.sample(pick(SOFT_HEAVY), { volume: 0.9, rate: 0.8, when: 0.02, echo: true });
     this.tone(520, 0.55, { type: "sawtooth", endFreq: 35, gain: 0.3 });
     this.noiseHit(0.3, { gain: 0.24, filterFreq: 280 });
   }

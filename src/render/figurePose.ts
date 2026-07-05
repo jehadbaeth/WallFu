@@ -80,25 +80,29 @@ export const ATTACK_POSES: Record<AttackKind, AttackPoseConfig[]> = {
     { pitch: 0.1, pitchGain: 0.08, crouch: 0.16, kick: false, strike: pt(54, -18), offHand: GUARD_FRONT, stanceFront: pt(24, 0), stanceBack: pt(-30, 0) },
   ],
   lowKick: [
-    // Deep crouch sweep along the ground.
-    { pitch: 0.5, pitchGain: 0.1, crouch: 0.42, kick: true, strike: pt(66, -4), offHand: pt(-14, 8), stanceFront: pt(0, 0), stanceBack: pt(-20, 0) },
+    // Deep squat sweep, leg scything just above the ground.
+    { pitch: 0.5, pitchGain: 0.08, crouch: 0.85, kick: true, strike: pt(54, -4), offHand: pt(-14, 8), stanceFront: pt(0, 0), stanceBack: pt(-14, 0) },
     // Snapping shin kick, guard kept up.
-    { pitch: 0.26, pitchGain: 0.08, crouch: 0.22, kick: true, strike: pt(56, -22), offHand: GUARD_FRONT, stanceFront: pt(0, 0), stanceBack: pt(-16, 0) },
-    // Dropped sweep, body low and long.
-    { pitch: 0.72, pitchGain: 0.08, crouch: 0.58, kick: true, strike: pt(72, -2), offHand: pt(-20, 12), stanceFront: pt(0, 0), stanceBack: pt(-26, 0) },
+    { pitch: 0.24, pitchGain: 0.08, crouch: 0.3, kick: true, strike: pt(52, -20), offHand: GUARD_FRONT, stanceFront: pt(0, 0), stanceBack: pt(-14, 0) },
+    // Dropped sweep, body folded low and long.
+    { pitch: 0.8, pitchGain: 0.06, crouch: 1.0, kick: true, strike: pt(58, -2), offHand: pt(-18, 12), stanceFront: pt(0, 0), stanceBack: pt(-16, 0) },
   ],
   // Liu Kang high kick: torso tips away so the head ducks low while the
   // straight leg swings up in front, foot above the head.
   highKick: [
-    { pitch: -1.15, pitchGain: -0.05, crouch: 0.08, kick: true, strike: pt(16, -112), offHand: pt(-16, 14), stanceFront: pt(0, 0), stanceBack: pt(-4, 0), kneeSide: -1 },
+    { pitch: -1.15, pitchGain: -0.05, crouch: 0.08, kick: true, strike: pt(16, -112), offHand: pt(-16, 14), stanceFront: pt(0, 0), stanceBack: pt(-4, 0), kneeSide: 1 },
   ],
   airPunch: [
     { pitch: 0.14, pitchGain: 0.08, crouch: 0, kick: false, strike: pt(54, -2), offHand: GUARD_FRONT, stanceFront: pt(16, -28), stanceBack: pt(-12, -22) },
     { pitch: 0.3, pitchGain: 0.08, crouch: 0, kick: false, strike: pt(48, -24), offHand: GUARD_FRONT, stanceFront: pt(14, -30), stanceBack: pt(-14, -24), elbowSide: -1 },
   ],
-  // MK jump kick: leg thrust diagonally down-forward, other leg tucked.
+  // MK jump kick: leg thrust 45 degrees down-forward along the fall, other leg tucked.
   airKick: [
-    { pitch: 0.24, pitchGain: 0.08, crouch: 0, kick: true, strike: pt(50, -18), offHand: pt(-12, 6), stanceFront: pt(0, 0), stanceBack: pt(-14, -30) },
+    { pitch: 0.24, pitchGain: 0.08, crouch: 0, kick: true, strike: pt(46, -8), offHand: pt(-12, 6), stanceFront: pt(0, 0), stanceBack: pt(-14, -30) },
+  ],
+  // Down+kick spin sweep: body drops into a full spin at ankle height.
+  spinSweep: [
+    { pitch: 0.7, pitchGain: 0.06, crouch: 1.0, kick: true, strike: pt(56, -2), offHand: pt(-18, 10), stanceFront: pt(0, 0), stanceBack: pt(-14, 0) },
   ],
   // Dive kick: body pitched into the plunge, both legs trailing into the strike.
   diveKick: [
@@ -130,6 +134,7 @@ export function buildPose(
   knockLean: number,
   wallSliding = false,
   attackVariant = 0,
+  crouching = false,
 ): Pose {
   const pose: Pose = {
     torsoPitch: 0.12,
@@ -140,8 +145,9 @@ export function buildPose(
     backFoot: pt(-16, 0),
     frontElbowSide: 1,
     backElbowSide: 1,
-    frontKneeSide: 1,
-    backKneeSide: 1,
+    // Knees pop forward/up (side -1 in y-down space), like real knees.
+    frontKneeSide: -1,
+    backKneeSide: -1,
   };
 
   if (stunned) {
@@ -171,8 +177,9 @@ export function buildPose(
       const e = Math.min(ext, 1);
       pose.torsoPitch = cfg.pitch + cfg.pitchGain * e;
       if (cfg.kick) {
-        // Foot travels chamber -> strike target.
-        pose.frontFoot = lerpPt(CHAMBER_FOOT, cfg.strike, e);
+        // Active snaps to the strike target; recovery steps the foot back down
+        // toward the ground instead of floating through the chamber.
+        pose.frontFoot = lerpPt(pt(20, 0), cfg.strike, e);
         pose.backFoot = cfg.stanceBack;
         pose.frontHand = cfg.offHand;
         pose.backHand = pt(cfg.offHand.x - 6, cfg.offHand.y + 6);
@@ -191,6 +198,14 @@ export function buildPose(
     pose.backHand = pt(15, -20);
     pose.frontFoot = pt(14, 0);
     pose.backFoot = pt(-14, 0);
+  } else if (crouching) {
+    // Duck: deep squat under high attacks, guard tight at the chin.
+    pose.torsoPitch = 0.18;
+    pose.crouch = 1.0;
+    pose.frontHand = pt(16, -10);
+    pose.backHand = pt(11, -6);
+    pose.frontFoot = pt(20, 0);
+    pose.backFoot = pt(-18, 0);
   } else if (wallSliding) {
     pose.torsoPitch = -0.22;
     pose.crouch = 0.1;
@@ -305,7 +320,8 @@ function solveLimb(origin: Pt, target: Pt, l1: number, l2: number, side: 1 | -1)
  */
 export function computeSkeleton(pose: Pose, facing: 1 | -1): Skeleton {
   const pitch = Math.max(-1.45, Math.min(1.45, pose.torsoPitch));
-  const hip: Pt = { x: 0, y: -LEG_LEN * (1 - pose.crouch * 0.3) };
+  // crouch 1 puts the hip at roughly half leg height for deep ducks and sweeps.
+  const hip: Pt = { x: 0, y: -LEG_LEN * (1 - pose.crouch * 0.5) };
   const shoulder: Pt = {
     x: hip.x + Math.sin(pitch) * TORSO_LEN,
     y: hip.y - Math.cos(pitch) * TORSO_LEN,

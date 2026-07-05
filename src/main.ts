@@ -315,11 +315,11 @@ async function main() {
   } as const;
   const controlsStyle = new TextStyle(controlsStyleOpts);
   const p1Controls = new Text({
-    text: "P1  A/D Move  W Jump  S Down  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nS+Punch Uppercut   Air S+Kick Dive Kick   Dash+Attack Dash Attack   HiPunch throws held weapon",
+    text: "P1  A/D Move  W Jump  S Duck  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nDuck+Punch Uppercut   Duck+Kick Spin Sweep   Air S+Kick Dive Kick   HiPunch throws held weapon",
     style: controlsStyle,
   });
   const p2Controls = new Text({
-    text: "P2  ←/→ Move  ↑ Jump  ↓ Down  |  Num4 HiPunch  Num1 LoPunch  Num5 HiKick  Num2 LoKick  Num6 Block  Num3 Dash\n↓+Punch Uppercut   Air ↓+Kick Dive Kick   Dash+Attack Dash Attack",
+    text: "P2  ←/→ Move  ↑ Jump  ↓ Duck  |  Num4 HiPunch  Num1 LoPunch  Num5 HiKick  Num2 LoKick  Num6 Block  Num3 Dash\nDuck+Punch Uppercut   Duck+Kick Spin Sweep   Air ↓+Kick Dive Kick",
     style: new TextStyle({ ...controlsStyleOpts, align: "right" }),
   });
   p1Controls.anchor.set(0, 1);
@@ -530,7 +530,13 @@ async function main() {
     }
     // Sparks fly along the knockback direction (straight up for launchers/sweeps, down for dive kicks).
     const knockAngle =
-      kind === "launcher" || kind === "lowKick" ? -Math.PI / 2 : kind === "diveKick" ? Math.PI / 2 : dirX > 0 ? 0 : Math.PI;
+      kind === "launcher" || kind === "lowKick" || kind === "spinSweep"
+        ? -Math.PI / 2
+        : kind === "diveKick"
+          ? Math.PI / 2
+          : dirX > 0
+            ? 0
+            : Math.PI;
     particles.burst(x, y, YELLOW, heavy ? 36 : 22, { speed: heavy ? 620 : 440, spread: Math.PI * 1.6, gravity: 500, size: heavy ? 7 : 5, glow: true });
     particles.burst(x, y, WHITE, heavy ? 14 : 8, { speed: 260, spread: Math.PI * 2, gravity: 300, size: 3, glow: true });
     particles.streakBurst(x, y, WHITE, heavy ? 12 : 6, { angle: knockAngle, speed: heavy ? 640 : 460, spread: 0.9, size: heavy ? 5 : 4 });
@@ -546,10 +552,11 @@ async function main() {
       particles.burst(x, y, ORANGE, 26, { speed: 560, spread: Math.PI * 1.4, angle: knockAngle, gravity: 300, size: 6, glow: true });
       particles.burst(x, y, RED, 12, { speed: 340, spread: Math.PI * 2, gravity: 200, size: 5, glow: true });
       shockRings.spawn(x, y, ORANGE, 130, 0.38, 7);
-    } else if (kind === "lowKick") {
+    } else if (kind === "lowKick" || kind === "spinSweep") {
       // Sweep: dust kicked along the ground plus a rising pop.
       particles.dustPuff(x, y + 30, WHITE, 12);
       particles.streakBurst(x, y, YELLOW, 8, { angle: -Math.PI / 2, speed: 480, spread: 0.7, size: 4 });
+      if (kind === "spinSweep") shockRings.spawn(x, y + 20, WHITE, 80, 0.25, 5);
     } else if (kind === "diveKick") {
       // Spike: force slams downward.
       particles.streakBurst(x, y, CYAN, 8, { angle: Math.PI / 2, speed: 520, spread: 0.6, size: 4 });
