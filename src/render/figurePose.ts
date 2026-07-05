@@ -31,8 +31,8 @@ export const HEAD_R = 16;
 export const TORSO_LEN = 52;
 export const THIGH_LEN = 30;
 export const SHIN_LEN = 28;
-export const UPPER_ARM_LEN = 24;
-export const FOREARM_LEN = 24;
+export const UPPER_ARM_LEN = 28;
+export const FOREARM_LEN = 28;
 const LEG_LEN = THIGH_LEN + SHIN_LEN;
 
 // Boxer guard: fists chambered by the chin (relative to shoulder).
@@ -64,20 +64,20 @@ export interface AttackPoseConfig {
 // repeated hits never look identical (One Finger Death Punch style).
 export const ATTACK_POSES: Record<AttackKind, AttackPoseConfig[]> = {
   lowPunch: [
-    // Straight jab from the chin, fist ends at chin height.
-    { pitch: 0.18, pitchGain: 0.08, crouch: 0.1, kick: false, strike: pt(56, -4), offHand: GUARD_FRONT, stanceFront: pt(26, 0), stanceBack: pt(-24, 0) },
+    // Straight jab from the chin: OFDP lunge, low hips, full split.
+    { pitch: 0.18, pitchGain: 0.08, crouch: 0.4, kick: false, strike: pt(60, -4), offHand: GUARD_FRONT, stanceFront: pt(30, 0), stanceBack: pt(-30, 0) },
     // Backfist snapping up beside the head.
-    { pitch: 0.06, pitchGain: 0.06, crouch: 0.06, kick: false, strike: pt(46, -26), offHand: GUARD_FRONT, stanceFront: pt(18, 0), stanceBack: pt(-18, 0) },
+    { pitch: 0.06, pitchGain: 0.06, crouch: 0.25, kick: false, strike: pt(50, -30), offHand: GUARD_FRONT, stanceFront: pt(24, 0), stanceBack: pt(-24, 0) },
     // Body hook: elbow stays flared through the arc.
-    { pitch: 0.3, pitchGain: 0.08, crouch: 0.18, kick: false, strike: pt(42, 10), offHand: GUARD_FRONT, stanceFront: pt(24, 0), stanceBack: pt(-22, 0), elbowSide: -1 },
+    { pitch: 0.3, pitchGain: 0.08, crouch: 0.4, kick: false, strike: pt(48, 10), offHand: GUARD_FRONT, stanceFront: pt(28, 0), stanceBack: pt(-28, 0), elbowSide: -1 },
   ],
   highPunch: [
-    // Long cross off a deep lunge.
-    { pitch: 0.3, pitchGain: 0.12, crouch: 0.12, kick: false, strike: pt(62, -6), offHand: GUARD_FRONT, stanceFront: pt(34, 0), stanceBack: pt(-34, 0) },
+    // Long cross off a deep OFDP split lunge.
+    { pitch: 0.32, pitchGain: 0.12, crouch: 0.55, kick: false, strike: pt(68, -6), offHand: GUARD_FRONT, stanceFront: pt(38, 0), stanceBack: pt(-38, 0) },
     // Overhand looping down onto the head.
-    { pitch: 0.42, pitchGain: 0.1, crouch: 0.14, kick: false, strike: pt(52, -24), offHand: GUARD_FRONT, stanceFront: pt(30, 0), stanceBack: pt(-30, 0), elbowSide: -1 },
+    { pitch: 0.42, pitchGain: 0.1, crouch: 0.5, kick: false, strike: pt(58, -26), offHand: GUARD_FRONT, stanceFront: pt(34, 0), stanceBack: pt(-34, 0), elbowSide: -1 },
     // Rising straight to the jaw.
-    { pitch: 0.1, pitchGain: 0.08, crouch: 0.16, kick: false, strike: pt(54, -18), offHand: GUARD_FRONT, stanceFront: pt(24, 0), stanceBack: pt(-30, 0) },
+    { pitch: 0.1, pitchGain: 0.08, crouch: 0.4, kick: false, strike: pt(60, -20), offHand: GUARD_FRONT, stanceFront: pt(28, 0), stanceBack: pt(-32, 0) },
   ],
   lowKick: [
     // Deep squat sweep, leg scything just above the ground.
@@ -90,15 +90,16 @@ export const ATTACK_POSES: Record<AttackKind, AttackPoseConfig[]> = {
   // Liu Kang high kick: torso tips away so the head ducks low while the
   // straight leg swings up in front, foot above the head.
   highKick: [
-    { pitch: -1.15, pitchGain: -0.05, crouch: 0.08, kick: true, strike: pt(16, -112), offHand: pt(-16, 14), stanceFront: pt(0, 0), stanceBack: pt(-4, 0), kneeSide: 1 },
+    { pitch: -1.15, pitchGain: -0.05, crouch: 0.08, kick: true, strike: pt(16, -112), offHand: pt(-16, 14), stanceFront: pt(0, 0), stanceBack: pt(-4, 0) },
   ],
   airPunch: [
     { pitch: 0.14, pitchGain: 0.08, crouch: 0, kick: false, strike: pt(54, -2), offHand: GUARD_FRONT, stanceFront: pt(16, -28), stanceBack: pt(-12, -22) },
     { pitch: 0.3, pitchGain: 0.08, crouch: 0, kick: false, strike: pt(48, -24), offHand: GUARD_FRONT, stanceFront: pt(14, -30), stanceBack: pt(-14, -24), elbowSide: -1 },
   ],
-  // MK jump kick: leg thrust 45 degrees down-forward along the fall, other leg tucked.
+  // MK jump kick: flying kick silhouette, long leg driving down-forward,
+  // other leg tucked hard, arms trailing behind.
   airKick: [
-    { pitch: 0.24, pitchGain: 0.08, crouch: 0, kick: true, strike: pt(46, -8), offHand: pt(-12, 6), stanceFront: pt(0, 0), stanceBack: pt(-14, -30) },
+    { pitch: 0.32, pitchGain: 0.08, crouch: 0, kick: true, strike: pt(52, -12), offHand: pt(-20, -4), stanceFront: pt(0, 0), stanceBack: pt(-18, -34) },
   ],
   // Down+kick spin sweep: body drops into a full spin at ankle height.
   spinSweep: [
@@ -217,9 +218,10 @@ export function buildPose(
     const s = Math.sin(phase);
     const lift = Math.max(0, Math.sin(phase + Math.PI / 2));
     pose.torsoPitch = 0.16;
-    pose.crouch = 0.1;
-    pose.frontFoot = pt(s * 34, -Math.max(0, s) * 16);
-    pose.backFoot = pt(-s * 34, -Math.max(0, -s) * 16 - lift * 4);
+    // Lower hips so the full stride stays within leg reach (no floating feet).
+    pose.crouch = 0.3;
+    pose.frontFoot = pt(s * 28, -Math.max(0, s) * 16);
+    pose.backFoot = pt(-s * 28, -Math.max(0, -s) * 16 - lift * 4);
     // Arms pump opposite the legs, elbows staying bent.
     pose.frontHand = pt(12 - s * 22, -2 + Math.abs(s) * 4);
     pose.backHand = pt(12 + s * 22, -2 + Math.abs(s) * 4);
@@ -241,12 +243,13 @@ export function buildPose(
     }
   } else {
     // Fighting-ready idle: staggered stance, fists at the chin, gentle sway.
+    // Crouch keeps the stance width within leg reach so feet stay planted.
     const s = Math.sin(phase) * 3;
-    pose.frontFoot = pt(18, 0);
-    pose.backFoot = pt(-16, 0);
+    pose.frontFoot = pt(17, 0);
+    pose.backFoot = pt(-15, 0);
     pose.frontHand = pt(GUARD_FRONT.x + s, GUARD_FRONT.y + s * 0.6);
     pose.backHand = pt(GUARD_BACK.x - s * 0.5, GUARD_BACK.y + s * 0.6);
-    pose.crouch = 0.08 + Math.sin(phase) * 0.01;
+    pose.crouch = 0.15 + Math.sin(phase) * 0.012;
   }
 
   pose.torsoPitch += knockLean;

@@ -141,11 +141,12 @@ export const ATTACKS: Record<AttackKind, AttackData> = {
     hitstop: 0.06,
     bottomOffset: 30,
   },
+  // MK uppercut: big damage, launches sky-high.
   launcher: {
     startup: 0.1,
     active: 0.09,
     recovery: 0.26,
-    damage: 11,
+    damage: 14,
     knockback: 120,
     upKnockback: 820,
     hitstun: 0.5,

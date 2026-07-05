@@ -1173,12 +1173,13 @@ async function main() {
         const intent2 = aiController
           ? aiController.poll(FIXED_DT, player2, player1, fightMap)
           : mergeIntents(player2Input.poll(), player2Gamepad.poll());
-        // Holding a weapon repurposes the high punch button as the throw.
-        if (intent1.highPunchPressed && weapons.holding(player1) && weapons.tryThrow(player1)) {
+        // Holding a weapon repurposes the high punch button as the throw,
+        // except while ducking: duck+punch must stay the MK uppercut.
+        if (intent1.highPunchPressed && !intent1.fastFall && weapons.holding(player1) && weapons.tryThrow(player1)) {
           intent1.highPunchPressed = false;
           intent1.highPunch = false;
         }
-        if (intent2.highPunchPressed && weapons.holding(player2) && weapons.tryThrow(player2)) {
+        if (intent2.highPunchPressed && !intent2.fastFall && weapons.holding(player2) && weapons.tryThrow(player2)) {
           intent2.highPunchPressed = false;
           intent2.highPunch = false;
         }

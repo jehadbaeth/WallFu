@@ -126,11 +126,9 @@ export class StickFigureView {
       this.runPhase += dt * 2; // idle sway
     }
 
-    // Tumble while flying from a heavy hit, spin during the sweep, spring upright otherwise.
+    // Tumble while flying from a heavy hit; spring upright otherwise.
     const flySpeed = Math.hypot(fighter.vx, fighter.vy);
-    if (fighter.attackKind === "spinSweep" && fighter.attackPhase && fighter.attackPhase !== "startup") {
-      this.tumble += dt * 20 * fighter.facing;
-    } else if (fighter.isStunned && !fighter.grounded && flySpeed > 650) {
+    if (fighter.isStunned && !fighter.grounded && flySpeed > 650) {
       this.tumble += dt * 13 * Math.sign(fighter.vx || 1);
     } else {
       this.tumble *= Math.max(0, 1 - dt * 12);
