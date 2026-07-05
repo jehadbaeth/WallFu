@@ -137,6 +137,8 @@ export function buildPose(
   attackVariant = 0,
   crouching = false,
   downed = false,
+  sliding = false,
+  rolling = false,
 ): Pose {
   const pose: Pose = {
     torsoPitch: 0.12,
@@ -208,6 +210,23 @@ export function buildPose(
     pose.backHand = pt(15, -20);
     pose.frontFoot = pt(14, 0);
     pose.backFoot = pt(-14, 0);
+  } else if (rolling) {
+    // Landing roll: curled into a ball; the renderer spins the whole body.
+    pose.torsoPitch = 0.75;
+    pose.crouch = 1.35;
+    pose.frontFoot = pt(30, -2);
+    pose.backFoot = pt(20, 0);
+    pose.frontHand = pt(-6, 28);
+    pose.backHand = pt(-12, 26);
+  } else if (sliding) {
+    // Momentum slide: leaning back low, lead leg speared forward along the
+    // ground, trailing arm planted behind for balance.
+    pose.torsoPitch = -0.55;
+    pose.crouch = 1.15;
+    pose.frontFoot = pt(42, 0);
+    pose.backFoot = pt(10, -8);
+    pose.frontHand = pt(30, -6);
+    pose.backHand = pt(-12, 44);
   } else if (crouching) {
     // Duck: deep squat under high attacks, guard tight at the chin.
     pose.torsoPitch = 0.18;

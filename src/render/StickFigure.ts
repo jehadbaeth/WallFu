@@ -1,9 +1,13 @@
 import { Graphics, Container } from "pixi.js";
 import type { Fighter } from "../core/Fighter";
+import { ROLL_DURATION } from "../core/Fighter";
 import { ATTACKS, isHeavyKind } from "../core/Combat";
 import { buildPose, blendPose, computeSkeleton, HEAD_R, type Pose, type Limb } from "./figurePose";
 
 const STROKE = 6;
+const FLIP_DURATION = 0.45;
+// Speed past which the figure leaves afterimages (Animator-vs-Animation smear).
+const SMEAR_SPEED = 640;
 
 interface Ghost {
   x: number;
@@ -32,6 +36,7 @@ export class StickFigureView {
   private stretchY = 1;
   private stretchYVelocity = 0;
   private tumble = 0; // spin while flying from a big hit
+  private flipTimer = 0; // somersault after an air jump
   private pose: Pose | null = null; // blended display pose
   private attackVariant = 0; // rerolled each strike so repeats look different
   private punchHand = false; // alternates which arm throws consecutive punches
@@ -84,6 +89,20 @@ export class StickFigureView {
       } else if (ev.type === "airJump") {
         this.squash = 1.25;
         this.squashVelocity = 0;
+        this.flipTimer = FLIP_DURATION; // double jumps somersault
+      } else if (ev.type === "slide") {
+        this.squash = 0.85;
+        this.squashVelocity = 0;
+        this.stretchX = 1.35;
+        this.stretchXVelocity = 0;
+      } else if (ev.type === "wallRun") {
+        this.squash = 1.3;
+        this.squashVelocity = 0;
+        this.stretchY = 1.2;
+        this.stretchYVelocity = 0;
+      } else if (ev.type === "roll") {
+        this.squash = 0.8;
+        this.squashVelocity = 0;
       } else if (ev.type === "land") {
         const t = Math.min(ev.impactSpeed / 1400, 1);
         this.squash = 1 - 0.4 * t;
@@ -134,14 +153,29 @@ export class StickFigureView {
       this.tumble *= Math.max(0, 1 - dt * 12);
       if (Math.abs(this.tumble) < 0.02) this.tumble = 0;
     }
-    this.body.rotation = this.tumble;
 
-    // Dash afterimage trail.
-    if (fighter.isDashing) {
+    // Air-jump somersault: one full forward rotation, cut short by landing.
+    if (this.flipTimer > 0) {
+      this.flipTimer -= dt;
+      if (fighter.grounded || fighter.isStunned) this.flipTimer = 0;
+    }
+    const flipSpin = this.flipTimer > 0 ? fighter.facing * (1 - this.flipTimer / FLIP_DURATION) * Math.PI * 2 : 0;
+    // Landing roll: the tucked body turns over once through the roll.
+    const rollSpin = fighter.rollTimer > 0 ? fighter.facing * (1 - fighter.rollTimer / ROLL_DURATION) * Math.PI * 2 : 0;
+    this.body.rotation = this.tumble + flipSpin + rollSpin;
+
+    // Afterimage trail: dashes always, and any movement fast enough to smear.
+    if (fighter.isDashing || (flySpeed > SMEAR_SPEED && !fighter.koed)) {
       this.ghostSpawnTimer -= dt;
       if (this.ghostSpawnTimer <= 0) {
-        this.ghostSpawnTimer = 0.02;
-        this.ghosts.push({ x: fighter.x, y: fighter.y, facing: fighter.facing, phase: this.runPhase, alpha: 0.45 });
+        this.ghostSpawnTimer = fighter.isDashing ? 0.02 : 0.035;
+        this.ghosts.push({
+          x: fighter.x,
+          y: fighter.y,
+          facing: fighter.facing,
+          phase: this.runPhase,
+          alpha: fighter.isDashing ? 0.45 : 0.3,
+        });
       }
     }
     for (const g of this.ghosts) g.alpha -= dt * 2.2;
@@ -190,6 +224,8 @@ export class StickFigureView {
       this.attackVariant,
       fighter.crouching,
       fighter.downed && fighter.grounded,
+      fighter.sliding,
+      fighter.rollTimer > 0,
     );
     // Alternate punching hands: swap arm targets so the other fist fires while
     // the first returns to guard.
@@ -210,8 +246,9 @@ export class StickFigureView {
     const drawColor = this.hitFlash > 0.4 ? 0xffffff : this.color;
     drawSkeleton(this.body, this.pose, fighter.facing, drawColor, 1, false);
 
-    // Running bob: the whole figure bounds with the stride.
-    const running2 = fighter.grounded && Math.abs(fighter.vx) > 10 && !fighter.isAttacking && !fighter.blocking;
+    // Running bob: the whole figure bounds with the stride. Slides and rolls glide instead.
+    const running2 =
+      fighter.grounded && Math.abs(fighter.vx) > 10 && !fighter.isAttacking && !fighter.blocking && !fighter.sliding && fighter.rollTimer <= 0;
     const bob = running2 ? Math.abs(Math.sin(this.runPhase)) * 4 : 0;
     this.view.position.set(x, y - bob);
     // Squash/stretch composes with the dash stretch springs.

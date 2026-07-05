@@ -8,7 +8,10 @@ export type FighterEvent =
   | { type: "airJump" }
   | { type: "wallJump" }
   | { type: "wallBounce" }
+  | { type: "wallRun" }
   | { type: "land"; impactSpeed: number }
+  | { type: "roll" }
+  | { type: "slide" }
   | { type: "dash" }
   | { type: "turn" }
   | { type: "attackStart"; kind: AttackKind }
@@ -50,6 +53,18 @@ const LUNGE_SPEED: Partial<Record<AttackKind, number>> = {
 
 const AERIAL_KINDS: Set<AttackKind> = new Set(["airPunch", "airKick", "diveKick"]);
 
+// Animator-vs-Animation movement: slides, wall runs, and landing rolls keep
+// the figure in constant motion instead of stopping at every obstacle.
+const SLIDE_MIN_SPEED = 420; // ducking above this speed becomes a momentum slide
+const SLIDE_END_SPEED = 220; // slide decays into a normal crouch below this
+const SLIDE_FRICTION = 700; // px/s^2, far below ground friction so slides carry
+const WALL_RUN_MIN_SPEED = 500; // running start needed to convert into a wall run
+const WALL_RUN_MAX_VY = 980; // dash into the wall earns the tallest run
+const WALL_RUN_GRAVITY_MULT = 0.45; // feet on the wall carry the ascent further
+export const ROLL_DURATION = 0.3; // seconds of roll animation after a hard landing
+const ROLL_MIN_IMPACT = 700; // fall speed that triggers a roll instead of a thud
+const ROLL_SPEED = 540; // horizontal speed carried out of the roll
+
 const WALL_SLIDE_MAX_FALL = 260; // capped fall speed while pressed against a wall
 const WALL_JUMP_VX = 640;
 const WALL_JUMP_VY = -860;
@@ -78,6 +93,12 @@ export class Fighter {
 
   /** Ducking: holding down while grounded. Shrinks the hurtbox so high attacks whiff. */
   crouching = false;
+
+  /** Momentum slide: ducked while running fast. Keeps speed, stays low. */
+  sliding = false;
+
+  /** Counts down through the landing-roll animation. */
+  rollTimer = 0;
 
   /** Swept off the feet: lying on the ground for the rest of the hitstun. */
   downed = false;
@@ -128,6 +149,8 @@ export class Fighter {
     this.dashCooldown = 0;
     this.touchingWallSide = 0;
     this.crouching = false;
+    this.sliding = false;
+    this.rollTimer = 0;
     this.downed = false;
     this.health = this.maxHealth;
     this.koed = false;
@@ -145,6 +168,8 @@ export class Fighter {
     this.vx = knockbackVx;
     this.vy = knockbackVy;
     this.hitstunTimer = hitstun;
+    this.sliding = false;
+    this.rollTimer = 0;
     this.downed = knockdown && !blocked;
     this.grounded = false;
     this.attackKind = null;
@@ -213,6 +238,7 @@ export class Fighter {
     }
 
     if (this.dashCooldown > 0) this.dashCooldown -= dt;
+    if (this.rollTimer > 0) this.rollTimer -= dt;
 
     if (this.hitstunTimer > 0) {
       this.hitstunTimer -= dt;
@@ -298,7 +324,14 @@ export class Fighter {
       }
     } else {
       this.blocking = this.grounded && intent.block;
-      this.crouching = this.grounded && intent.fastFall && !this.blocking && !this.isDashing;
+      const wantDuck = this.grounded && intent.fastFall && !this.blocking && !this.isDashing;
+      // Ducking at speed becomes a momentum slide that carries under high attacks.
+      if (wantDuck && !this.crouching && !this.sliding && Math.abs(this.vx) > SLIDE_MIN_SPEED) {
+        this.sliding = true;
+        this.events.push({ type: "slide" });
+      }
+      if (!wantDuck || Math.abs(this.vx) < SLIDE_END_SPEED) this.sliding = false;
+      this.crouching = wantDuck;
 
       if (!this.blocking && intent.dashPressed && this.dashCooldown <= 0 && !this.isDashing) {
         this.dashTimer = DASH_DURATION;
@@ -321,7 +354,10 @@ export class Fighter {
 
       const targetVx = this.blocking || this.crouching ? 0 : intent.moveX * MOVE_SPEED;
       const accel = this.grounded ? GROUND_ACCEL : AIR_ACCEL;
-      if (targetVx !== 0) {
+      if (this.sliding) {
+        // Slides bleed speed slowly instead of braking to a crouch.
+        this.vx = moveToward(this.vx, 0, SLIDE_FRICTION * dt);
+      } else if (targetVx !== 0) {
         this.vx = moveToward(this.vx, targetVx, accel * dt);
       } else if (this.grounded) {
         this.vx = moveToward(this.vx, 0, GROUND_FRICTION * dt);
@@ -349,6 +385,10 @@ export class Fighter {
       let gravity = GRAVITY;
       if (!this.grounded && intent.fastFall && this.vy > 0) {
         gravity *= FAST_FALL_GRAVITY_MULT;
+      }
+      // Wall run carry: ascending pressed against a wall while steering into it.
+      if (!this.grounded && this.vy < 0 && this.touchingWallSide !== 0 && intent.moveX === this.touchingWallSide) {
+        gravity *= WALL_RUN_GRAVITY_MULT;
       }
       this.vy += gravity * dt;
       if (this.vy > MAX_FALL_SPEED) this.vy = MAX_FALL_SPEED;
@@ -378,7 +418,12 @@ export class Fighter {
     this.touchingWallSide = ground.grounded ? 0 : ground.wallHit;
     if (ground.grounded) {
       this.airJumpsUsed = 0;
-      if (!wasGrounded && ground.impactSpeed > 200) {
+      if (!wasGrounded && ground.impactSpeed > ROLL_MIN_IMPACT && intent.moveX !== 0 && !this.attackPhase) {
+        // Hard landing while steering: roll through it and keep moving.
+        this.rollTimer = ROLL_DURATION;
+        this.vx = intent.moveX * Math.max(Math.abs(this.vx), ROLL_SPEED);
+        this.events.push({ type: "roll" });
+      } else if (!wasGrounded && ground.impactSpeed > 200) {
         this.events.push({ type: "land", impactSpeed: ground.impactSpeed });
       }
       // Landing cancels aerial moves so play keeps flowing.
@@ -386,6 +431,19 @@ export class Fighter {
         this.attackPhase = null;
         this.attackKind = null;
         this.attackTimer = 0;
+      }
+      // Wall run: a genuine running start into a wall converts into a dash up it.
+      if (
+        ground.wallHit !== 0 &&
+        !this.attackPhase &&
+        intent.moveX === ground.wallHit &&
+        Math.abs(ground.wallImpactSpeed) > WALL_RUN_MIN_SPEED
+      ) {
+        this.vy = -Math.min(Math.abs(ground.wallImpactSpeed) * 1.15, WALL_RUN_MAX_VY);
+        this.grounded = false;
+        this.sliding = false;
+        this.dashTimer = 0;
+        this.events.push({ type: "wallRun" });
       }
     }
     this.checkBlastZone(map);

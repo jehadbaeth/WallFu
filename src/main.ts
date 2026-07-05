@@ -315,11 +315,11 @@ async function main() {
   } as const;
   const controlsStyle = new TextStyle(controlsStyleOpts);
   const p1Controls = new Text({
-    text: "P1  A/D Move  W Jump  S Duck  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nDuck+Punch Uppercut   Duck+Kick Spin Sweep   Air S+Kick Dive Kick   HiPunch throws held weapon",
+    text: "P1  A/D Move  W Jump  S Duck  |  F HiPunch  V LoPunch  G HiKick  B LoKick  H Block  J Dash\nDuck+Punch Uppercut   Duck+Kick Sweep   Run+Duck Slide   Run at wall Wall-Run   HiPunch throws weapon",
     style: controlsStyle,
   });
   const p2Controls = new Text({
-    text: "P2  ←/→ Move  ↑ Jump  ↓ Duck  |  Num4 HiPunch  Num1 LoPunch  Num5 HiKick  Num2 LoKick  Num6 Block  Num3 Dash\nDuck+Punch Uppercut   Duck+Kick Spin Sweep   Air ↓+Kick Dive Kick",
+    text: "P2  ←/→ Move  ↑ Jump  ↓ Duck  |  Num4 HiPunch  Num1 LoPunch  Num5 HiKick  Num2 LoKick  Num6 Block  Num3 Dash\nDuck+Punch Uppercut   Duck+Kick Sweep   Run+Duck Slide   Run at wall Wall-Run   Air ↓+Kick Dive Kick",
     style: new TextStyle({ ...controlsStyleOpts, align: "right" }),
   });
   p1Controls.anchor.set(0, 1);
@@ -409,8 +409,14 @@ async function main() {
     if (fighter.grounded && speed > 260 && !fighter.isAttacking && !fighter.blocking) {
       timer -= dt;
       if (timer <= 0) {
-        timer = 0.09;
-        particles.dustPuff(fighter.x - fighter.facing * 10, fighter.y, color, 3);
+        // A slide scrapes up a denser plume than running footfalls.
+        timer = fighter.sliding ? 0.04 : 0.09;
+        particles.dustPuff(
+          fighter.x - fighter.facing * (fighter.sliding ? 22 : 10),
+          fighter.y,
+          fighter.sliding ? WHITE : color,
+          fighter.sliding ? 5 : 3,
+        );
       }
     } else {
       timer = 0;
@@ -468,6 +474,26 @@ async function main() {
       if (fighter.grounded && Math.abs(fighter.vx) > 260) {
         particles.dustPuff(fighter.x + fighter.facing * 14, fighter.y, WHITE, 6);
       }
+    } else if (ev.type === "slide") {
+      // Dust kicked up the whole first stretch of the slide.
+      particles.dustPuff(fighter.x - fighter.facing * 10, fighter.y, WHITE, 10);
+      particles.streakBurst(fighter.x, fighter.y - 14, color, 6, {
+        angle: fighter.facing > 0 ? Math.PI : 0,
+        speed: 420,
+        spread: 0.35,
+        size: 4,
+      });
+      sound.whoosh(false);
+    } else if (ev.type === "wallRun") {
+      // Feet hitting the wall: dust burst plus streaks racing upward.
+      const wallX = fighter.x + fighter.facing * 20;
+      particles.dustPuff(wallX, fighter.y, WHITE, 12);
+      particles.streakBurst(wallX, fighter.y - 50, color, 10, { angle: -Math.PI / 2, speed: 540, spread: 0.35, size: 5 });
+      addShake(0.12);
+      sound.dash();
+    } else if (ev.type === "roll") {
+      particles.dustPuff(fighter.x, fighter.y, WHITE, 12);
+      sound.land(0.35);
     } else if (ev.type === "dash") {
       particles.burst(fighter.x, fighter.y, color, 14, { speed: 220, spread: Math.PI * 0.6, gravity: 100, size: 3, glow: true });
       particles.streakBurst(fighter.x, fighter.y - 40, color, 8, {
