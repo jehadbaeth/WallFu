@@ -3,9 +3,9 @@ import { emptyIntent } from "./types";
 import type { Fighter } from "./Fighter";
 import type { MapData } from "./MapTypes";
 
-export type AIDifficulty = "easy" | "medium" | "hard";
+export type AIDifficulty = "easy" | "medium" | "hard" | "insane";
 
-export const AI_DIFFICULTIES: AIDifficulty[] = ["easy", "medium", "hard"];
+export const AI_DIFFICULTIES: AIDifficulty[] = ["easy", "medium", "hard", "insane"];
 
 interface AIParams {
   /** Seconds between decisions. Lower = faster reactions. */
@@ -22,12 +22,15 @@ interface AIParams {
   mistakeChance: number;
   /** Whether launchers, dive kicks, and juggle follow-ups are used. */
   advancedMoves: boolean;
+  /** Whether slides into sweeps and other duck-move mixups are used. */
+  mixups: boolean;
 }
 
 const PARAMS: Record<AIDifficulty, AIParams> = {
-  easy: { reactionTime: 0.4, aggression: 0.45, blockChance: 0.08, dashChance: 0.06, jumpChance: 0.18, mistakeChance: 0.35, advancedMoves: false },
-  medium: { reactionTime: 0.2, aggression: 0.7, blockChance: 0.3, dashChance: 0.22, jumpChance: 0.32, mistakeChance: 0.14, advancedMoves: true },
-  hard: { reactionTime: 0.09, aggression: 0.9, blockChance: 0.55, dashChance: 0.4, jumpChance: 0.45, mistakeChance: 0.03, advancedMoves: true },
+  easy: { reactionTime: 0.4, aggression: 0.45, blockChance: 0.08, dashChance: 0.06, jumpChance: 0.18, mistakeChance: 0.35, advancedMoves: false, mixups: false },
+  medium: { reactionTime: 0.2, aggression: 0.7, blockChance: 0.3, dashChance: 0.22, jumpChance: 0.32, mistakeChance: 0.14, advancedMoves: true, mixups: false },
+  hard: { reactionTime: 0.09, aggression: 0.9, blockChance: 0.55, dashChance: 0.4, jumpChance: 0.45, mistakeChance: 0.03, advancedMoves: true, mixups: false },
+  insane: { reactionTime: 0.05, aggression: 0.96, blockChance: 0.72, dashChance: 0.55, jumpChance: 0.5, mistakeChance: 0, advancedMoves: true, mixups: true },
 };
 
 const ATTACK_RANGE = 90;
@@ -96,6 +99,32 @@ export class AIController {
   }
 
   private decide(self: Fighter, opponent: Fighter, map: MapData): void {
+    this.chooseAction(self, opponent, map);
+
+    // Pit sense: never sleepwalk off a ledge. Jump crossable gaps; hold the
+    // lip when the gap is wide and the opponent isn't worth the leap.
+    if (this.heldMoveX !== 0 && self.grounded && !this.heldBlock) {
+      const aheadX = self.x + this.heldMoveX * 100;
+      if (this.gapBelow(map, aheadX, self.y)) {
+        const wide = this.gapBelow(map, self.x + this.heldMoveX * 440, self.y);
+        if (wide && Math.abs(opponent.x - self.x) > 520) {
+          this.heldMoveX = 0;
+        } else if (!this.pressQueue.includes("jump")) {
+          this.pressQueue.push("jump");
+        }
+      }
+    }
+  }
+
+  /** True when nothing landable sits under this x within a survivable drop. */
+  private gapBelow(map: MapData, x: number, y: number): boolean {
+    for (const r of [...map.platforms, ...map.walls]) {
+      if (x >= r.x && x <= r.x + r.w && r.y >= y - 40 && r.y < y + 340) return false;
+    }
+    return true;
+  }
+
+  private chooseAction(self: Fighter, opponent: Fighter, map: MapData): void {
     const p = this.params;
     this.heldMoveX = 0;
     this.heldBlock = false;
@@ -140,6 +169,10 @@ export class AIController {
       if (adx > 240 && self.grounded && Math.random() < p.dashChance) {
         this.pressQueue.push("dash");
       }
+      // Slide in under any high swings at closing range.
+      if (p.mixups && self.grounded && adx < 420 && adx > 180 && Math.abs(self.vx) > 480 && Math.random() < 0.35) {
+        this.heldFastFall = true;
+      }
       // Chase an airborne opponent or hop platforms.
       if (self.grounded && (dy < -90 || Math.random() < p.jumpChance * 0.25)) {
         this.pressQueue.push("jump");
@@ -166,6 +199,10 @@ export class AIController {
         // Combo starter on a stunned opponent: launch into juggle.
         this.heldFastFall = true;
         this.pressQueue.push("highPunch");
+      } else if (p.mixups && self.grounded && opponent.grounded && !opponent.blocking && Math.random() < 0.3) {
+        // Sweep mixup: duck+kick knocks them flat.
+        this.heldFastFall = true;
+        this.pressQueue.push("lowKick");
       } else {
         // Mix up the four normals, favoring quick jabs.
         const r = Math.random();

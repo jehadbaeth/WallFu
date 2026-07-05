@@ -81,22 +81,103 @@ export const BUILTIN_LEVELS: LevelDef[] = [
     },
   },
   {
-    name: "Dagger Alley",
-    desc: "Two towers, one bridge, sharp weather.",
+    name: "Clockwork",
+    desc: "Three gears grind out daggers. Learn their rhythm or wear it.",
     build: (w, h) => {
       const g = h - 120;
       return {
-        name: "Dagger Alley",
+        name: "Clockwork",
         width: w,
         height: h,
-        platforms: [{ x: 0, y: g, w, h: 30 }, plat(w * 0.33, g - 320, w * 0.34)],
-        walls: [
-          { x: w * 0.28, y: g - 300, w: 60, h: 300 },
-          { x: w * 0.72 - 60, y: g - 300, w: 60, h: 300 },
+        platforms: [{ x: 0, y: g, w, h: 30 }, plat(w * 0.28, g - 200, w * 0.13), plat(w * 0.59, g - 200, w * 0.13)],
+        walls: [{ x: w / 2 - 45, y: g - 340, w: 90, h: 340 }],
+        spawn1: { x: w * 0.22, y: g },
+        spawn2: { x: w * 0.78, y: g },
+        hazards: {},
+        daggerWheels: [
+          { x: w * 0.5, y: g - 480 },
+          { x: w * 0.13, y: g - 250 },
+          { x: w * 0.87, y: g - 250 },
         ],
+      };
+    },
+  },
+  {
+    name: "Wormhole",
+    desc: "Two tears in space. In here, behind you IS in front of you.",
+    build: (w, h) => {
+      const g = h - 120;
+      return {
+        name: "Wormhole",
+        width: w,
+        height: h,
+        platforms: [
+          { x: w * 0.02, y: g, w: w * 0.24, h: 30 },
+          { x: w * 0.4, y: g, w: w * 0.2, h: 30 },
+          { x: w * 0.74, y: g, w: w * 0.24, h: 30 },
+          plat(w * 0.29, g - 260, w * 0.1),
+          plat(w * 0.61, g - 260, w * 0.1),
+          plat(w * 0.44, g - 480, w * 0.12),
+        ],
+        walls: [],
         spawn1: { x: w * 0.12, y: g },
         spawn2: { x: w * 0.88, y: g },
-        hazards: { daggers: true },
+        hazards: {},
+        portals: [
+          { x1: w * 0.06, y1: g - 90, x2: w * 0.94, y2: g - 90 },
+          { x1: w * 0.5, y1: g - 100, x2: w * 0.5, y2: g - 560 },
+        ],
+      };
+    },
+  },
+  {
+    name: "Freefall",
+    desc: "The pit doesn't kill you here. It fires you back out of the sky.",
+    build: (w, h) => {
+      const g = h - 120;
+      return {
+        name: "Freefall",
+        width: w,
+        height: h,
+        platforms: [
+          { x: 0, y: g, w: w * 0.38, h: 30 },
+          { x: w * 0.62, y: g, w: w * 0.38, h: 30 },
+          plat(w * 0.33, g - 300, w * 0.13),
+          plat(w * 0.54, g - 300, w * 0.13),
+        ],
+        walls: [],
+        spawn1: { x: w * 0.2, y: g },
+        spawn2: { x: w * 0.8, y: g },
+        hazards: {},
+        portals: [{ x1: w * 0.5, y1: h - 30, x2: w * 0.5, y2: 140 }],
+      };
+    },
+  },
+  {
+    name: "The Blender",
+    desc: "Crumbling bridge, spinning blades, boiling ground. Cross anyway.",
+    build: (w, h) => {
+      const g = h - 120;
+      return {
+        name: "The Blender",
+        width: w,
+        height: h,
+        platforms: [
+          { x: 0, y: g, w: w * 0.28, h: 30 },
+          { x: w * 0.72, y: g, w: w * 0.28, h: 30 },
+          plat(w * 0.3, g - 20, w * 0.12, true),
+          plat(w * 0.44, g - 20, w * 0.12, true),
+          plat(w * 0.58, g - 20, w * 0.12, true),
+          plat(w * 0.38, g - 280, w * 0.24),
+        ],
+        walls: [],
+        spawn1: { x: w * 0.14, y: g },
+        spawn2: { x: w * 0.86, y: g },
+        hazards: { lava: true },
+        daggerWheels: [
+          { x: w * 0.37, y: g - 200 },
+          { x: w * 0.63, y: g - 200 },
+        ],
       };
     },
   },
@@ -173,6 +254,8 @@ export const BUILTIN_LEVELS: LevelDef[] = [
         spawn1: { x: w * 0.3, y: g },
         spawn2: { x: w * 0.7, y: g },
         hazards: { daggers: true, lightning: true, lava: true },
+        daggerWheels: [{ x: w * 0.5, y: g - 520 }],
+        portals: [{ x1: w * 0.07, y1: g - 80, x2: w * 0.93, y2: g - 80 }],
       };
     },
   },
@@ -202,7 +285,7 @@ export const BUILTIN_LEVELS: LevelDef[] = [
   },
   {
     name: "The Staircase",
-    desc: "Climb for advantage, duck the bolts.",
+    desc: "Wall-run the steps for high ground, duck the bolts.",
     build: (w, h) => {
       const g = h - 120;
       return {
@@ -245,7 +328,7 @@ export const BUILTIN_LEVELS: LevelDef[] = [
   },
   {
     name: "Twin Towers",
-    desc: "Whoever holds the tops holds the match.",
+    desc: "Sprint up the towers. Whoever holds the tops holds the match.",
     build: (w, h) => {
       const g = h - 120;
       return {
@@ -332,6 +415,24 @@ export function randomMap(w: number, h: number): MapData {
   const spawn1 = { x: widest.x + widest.w * 0.25, y: widest.y };
   const spawn2 = { x: widest.x + widest.w * 0.75, y: widest.y };
 
+  // Sometimes a dagger wheel or a portal pair spices up the layout.
+  const daggerWheels: MapData["daggerWheels"] = [];
+  if (Math.random() < 0.35) {
+    const count = 1 + (Math.random() < 0.3 ? 1 : 0);
+    for (let i = 0; i < count; i++) {
+      daggerWheels.push({ x: w * (0.2 + Math.random() * 0.6), y: g - 200 - Math.random() * 320 });
+    }
+  }
+  const portals: MapData["portals"] = [];
+  if (Math.random() < 0.3) {
+    portals.push({
+      x1: w * (0.05 + Math.random() * 0.2),
+      y1: g - 80 - Math.random() * 300,
+      x2: w * (0.75 + Math.random() * 0.2),
+      y2: g - 80 - Math.random() * 300,
+    });
+  }
+
   return {
     name: `Random ${100 + Math.floor(Math.random() * 900)}`,
     width: w,
@@ -346,5 +447,7 @@ export function randomMap(w: number, h: number): MapData {
       lightning: Math.random() < 0.4,
       lava: Math.random() < 0.4,
     },
+    daggerWheels,
+    portals,
   };
 }

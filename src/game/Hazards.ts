@@ -368,8 +368,9 @@ export class HazardSystem {
         if (d.hit.has(f) || f.koed) continue;
         if (Math.abs(d.x - f.x) < f.radius + 8 && d.y > f.y - f.height && d.y < f.y + 6) {
           d.hit.add(f);
-          const kbX = d.vx !== 0 ? Math.sign(d.vx) * 240 : (Math.random() * 2 - 1) * 140;
-          this.hurtFighter(f, 7, kbX, -160, 0.24);
+          // Hazards hit hard: they telegraph, so eating one is on you.
+          const kbX = d.vx !== 0 ? Math.sign(d.vx) * 300 : (Math.random() * 2 - 1) * 140;
+          this.hurtFighter(f, 13, kbX, -200, 0.28);
           this.particles.burst(d.x, d.y, YELLOW, 10, { speed: 300, spread: Math.PI * 2, gravity: 400, size: 4, glow: true });
           sound.hit(false, f.blocking, false);
           d.stuck = true;
@@ -413,7 +414,7 @@ export class HazardSystem {
         this.particles.burst(l.x, l.groundY, CYAN, 24, { speed: 500, spread: Math.PI, gravity: 600, size: 5, glow: true });
         for (const f of this.fighters) {
           if (!f.koed && Math.abs(f.x - l.x) < 50 && f.y > l.groundY - 260) {
-            this.hurtFighter(f, 16, Math.sign(f.x - l.x || Math.random() - 0.5) * 320, -540, 0.42);
+            this.hurtFighter(f, 30, Math.sign(f.x - l.x || Math.random() - 0.5) * 380, -620, 0.5);
           }
         }
       }
@@ -446,7 +447,7 @@ export class HazardSystem {
           if (cd > this.time) continue;
           if (Math.abs(f.x - lv.x) < 34 + f.radius && f.y > lv.surfaceY - height - 10 && f.y - f.height < lv.surfaceY) {
             lv.cooldowns.set(f, this.time + 0.6);
-            this.hurtFighter(f, 9, Math.sign(f.x - lv.x || Math.random() - 0.5) * 280, -520, 0.34);
+            this.hurtFighter(f, 17, Math.sign(f.x - lv.x || Math.random() - 0.5) * 340, -560, 0.4);
             this.particles.burst(f.x, f.y - 40, LAVA_RED, 12, { speed: 320, spread: Math.PI, gravity: 500, size: 5, glow: true });
             sound.hit(true, f.blocking, true);
           }

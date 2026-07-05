@@ -1,8 +1,10 @@
+import type { AIDifficulty } from "./AIController";
+
 export interface Options {
   roundsToWin: number;
   shakeIntensity: number;
   soundVolume: number;
-  aiDifficulty: "easy" | "medium" | "hard";
+  aiDifficulty: AIDifficulty;
   /** Projection mapping mode: map geometry and backgrounds render black so only fighters and effects hit the wall. */
   projectionMode: boolean;
   /** Round time limit in seconds; 0 disables the timer. */
