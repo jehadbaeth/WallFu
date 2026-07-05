@@ -219,6 +219,11 @@ export class Fighter {
     }
   }
 
+  /** Punch-type attack thrown while holding a weapon (spear poke, sword stab). */
+  private isArmedPunch(kind: AttackKind): boolean {
+    return this.weaponReach > 0 && (kind === "lowPunch" || kind === "highPunch" || kind === "airPunch");
+  }
+
   private tryStartAttack(intent: Intent): void {
     const punchPressed = intent.highPunchPressed || intent.lowPunchPressed;
     const kickPressed = intent.highKickPressed || intent.lowKickPressed;
@@ -344,7 +349,9 @@ export class Fighter {
         }
       } else if (this.attackPhase === "active" && this.attackTimer <= 0) {
         this.attackPhase = "recovery";
-        this.attackTimer = data.recovery;
+        // Reach costs speed: armed pokes recover slower, so a spear's range
+        // can't be spammed into an unanswerable wall of jabs.
+        this.attackTimer = data.recovery * (this.isArmedPunch(kind) ? 1.7 : 1);
       } else if (this.attackPhase === "recovery" && this.attackTimer <= 0) {
         this.attackPhase = null;
         this.attackKind = null;
@@ -365,8 +372,9 @@ export class Fighter {
       }
       this.blocking = false;
 
-      // Hit-confirm chaining: after connecting, recovery cancels into the next attack.
-      if (this.attackPhase === "recovery" && this.attackHasHit) {
+      // Hit-confirm chaining: after connecting, recovery cancels into the next
+      // attack. Armed pokes don't get the cancel - weapons are deliberate.
+      if (this.attackPhase === "recovery" && this.attackHasHit && !this.isArmedPunch(kind)) {
         this.tryStartAttack(intent);
       }
     } else {
